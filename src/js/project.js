@@ -867,7 +867,7 @@ IgnisProject.prototype.addNode = function (hash, fpath, start, duration, activat
             hash: 'effect:' + fx.id,
             effectId: fx.id,
             effectName: fx.name,
-            effectSpeed: draft.speed || 500,
+            effectSpeed: this.ignis.library.clampEffectSpeedNumber(draft.speed || 128),
             effectIntensity: (draft.intensity !== undefined && draft.intensity !== null) ? draft.intensity : 128,
             effectSize: draft.size || 3,
             effectPaletteId: (draft.paletteId !== undefined && draft.paletteId !== null) ? draft.paletteId : 0,
@@ -1143,7 +1143,7 @@ IgnisProject.prototype.createNodeFromData = function (n)
         hash: n.hash,
         effectId: n.effectId || (fx ? fx.id : undefined),
         effectName: n.effectName || (fx ? fx.name : undefined),
-        effectSpeed: (n.effectSpeed !== undefined && n.effectSpeed !== null) ? n.effectSpeed : (fx ? 500 : undefined),
+        effectSpeed: (n.effectSpeed !== undefined && n.effectSpeed !== null) ? this.ignis.library.clampEffectSpeedNumber(n.effectSpeed) : (fx ? 128 : undefined),
         effectIntensity: (n.effectIntensity !== undefined && n.effectIntensity !== null) ? n.effectIntensity : (fx ? 128 : undefined),
         effectSize: (n.effectSize !== undefined && n.effectSize !== null) ? n.effectSize : (fx ? 3 : undefined),
         effectPaletteId: (n.effectPaletteId !== undefined && n.effectPaletteId !== null) ? n.effectPaletteId : (fx ? 0 : undefined),
@@ -1862,7 +1862,11 @@ IgnisProject.prototype.prepareBinarize = function (images)
     for (var i in this.timeline) {
         var node = this.timeline[i];
         if (!node || node.type != 'effect') continue;
-        binaries[node.hash + ':' + node.uid] = this.generateEffectImageData(node);
+        binaries[node.hash + ':' + node.uid] = this.generateEffectImageData(node, {
+            previewScale: 2,
+            downsample: true,
+            maxRenderPixels: 12000000
+        });
     }
 
     this.proc.callback(binaries);
@@ -2065,10 +2069,10 @@ IgnisProject.prototype.effectLakeColor = function (node, pos, colors)
                        : this.effectBlend({r:0,g:170,b:255}, {r:120,g:255,b:210}, (pos - 160) * 255 / 95);
 }
 
-IgnisProject.prototype.effectSignature = function (node, leds, maxColumns)
+IgnisProject.prototype.effectSignature = function (node, leds, maxColumns, previewScale, downsample)
 {
     var data = {
-        renderer: 4,
+        renderer: 7,
         id: node.effectId || node.id || node.hash,
         speed: node.effectSpeed || node.speed,
         intensity: node.effectIntensity || node.intensity,
@@ -2085,20 +2089,51 @@ IgnisProject.prototype.effectSignature = function (node, leds, maxColumns)
         effectFlipV: !!node.effectFlipV,
         mgap: node.mgap || 0,
         leds: leds || this.leds,
-        maxColumns: maxColumns || 0
+        maxColumns: maxColumns || 0,
+        previewScale: previewScale || 1,
+        downsample: !!downsample
     };
     return window.electronApi.md5(JSON.stringify(data));
 }
+
+IgnisProject.prototype.effectTextureCacheKey = function (node, leds, maxColumns, previewScale, downsample)
+{
+    return [
+        7,
+        node.effectId || node.id || node.hash,
+        node.effectSpeed || node.speed || 128,
+        node.effectIntensity || node.intensity || 128,
+        node.effectSize || node.size || 3,
+        (node.effectPaletteId !== undefined && node.effectPaletteId !== null) ? node.effectPaletteId : node.paletteId,
+        (node.effectColors || node.colors || []).join(','),
+        node.duration || 0,
+        node.frequency || 40,
+        node.mirror ? 1 : 0,
+        node.rotate ? 1 : 0,
+        node.reverse ? 1 : 0,
+        node.effectRotate180 ? 1 : 0,
+        node.effectFlipH ? 1 : 0,
+        node.effectFlipV ? 1 : 0,
+        node.mgap || 0,
+        leds || this.leds,
+        maxColumns || 0,
+        previewScale || 1,
+        downsample ? 1 : 0
+    ].join('|');
+}
+
 
 IgnisProject.prototype.effectPreviewDataUrl = function (node, width, height, zoomed)
 {
     var opts = (zoomed && typeof zoomed == 'object') ? zoomed : {};
     var ledCount = Math.max(1, parseInt(opts.leds || this.leds || config.project.default_leds || 170));
-    var previewScale = Math.max(1, Math.min(4, parseInt(opts.previewScale || 4)));
+    var previewScale = Math.max(1, Math.min(4, parseInt(opts.previewScale || 1)));
     var previewW = Math.max(32, parseInt(width || 100));
     var previewH = Math.max(32, parseInt(height || 100));
     var columns = Math.max(1, Math.round(ledCount * previewW / previewH));
     var previewNode = $.extend(true, {}, node, { duration: 2200, frequency: 80 });
+    var cacheKey = 'preview|' + this.effectTextureCacheKey(previewNode, ledCount, columns * previewScale, previewScale, false) + '|' + previewW + 'x' + previewH + '|' + previewScale;
+    if (node && node._effectPreviewDataUrlKey == cacheKey && node._effectPreviewDataUrlCache) return node._effectPreviewDataUrlCache;
     var image = this.generateEffectImageData(previewNode, { leds: ledCount, columns: columns * previewScale, previewScale: previewScale });
     var canvas = document.createElement('canvas');
     canvas.width = previewW;
@@ -2114,17 +2149,27 @@ IgnisProject.prototype.effectPreviewDataUrl = function (node, width, height, zoo
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(src, 0, 0, image.width, image.height, 0, 0, previewW, previewH);
-    return canvas.toDataURL('image/png');
+    var dataUrl = canvas.toDataURL('image/png');
+    if (node) {
+        node._effectPreviewDataUrlKey = cacheKey;
+        node._effectPreviewDataUrlCache = dataUrl;
+    }
+    return dataUrl;
 }
 
 IgnisProject.prototype.ensureEffectTexture = function (node, leds)
 {
     leds = Math.max(1, parseInt(leds || this.leds || config.project.default_leds || 170));
-    var maxColumns = 2048;
-    var sig = this.effectSignature(node, leds, maxColumns);
+    var maxColumns = 1536;
+    var previewScale = 2;
+    if (node && node._effectEditing && node._effectTextureCache) return node._effectTextureCache;
+    if (node && node._effectEditing && node._lastEffectTexture) return node._lastEffectTexture;
+    var cacheKey = this.effectTextureCacheKey(node, leds, maxColumns, previewScale, false);
+    if (node && node._effectTextureKey == cacheKey && node._effectTextureResult) return node._effectTextureResult;
+    var sig = this.effectSignature(node, leds, maxColumns, previewScale, false);
     var filePath = ignis_texdir() + path.sep + 'effect_' + sig + '_' + leds + '.png';
     if (!fs.existsSync(filePath)) {
-        var image = this.generateEffectImageData(node, { leds: leds, maxColumns: maxColumns, previewScale: 4 });
+        var image = this.generateEffectImageData(node, { leds: leds, maxColumns: maxColumns, previewScale: previewScale });
         var canvas = document.createElement('canvas');
         canvas.width = image.width;
         canvas.height = image.height;
@@ -2134,21 +2179,77 @@ IgnisProject.prototype.ensureEffectTexture = function (node, leds)
         ctx.putImageData(data, 0, 0);
         var png = canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '');
         fs.writeFileSync(filePath, Buffer.from(png, 'base64'));
-        node._effectTextureRatio = this.getEffectTextureRatio(node, leds, maxColumns);
+        node._effectTextureRatio = this.getEffectTextureRatio(node, leds, maxColumns, previewScale);
     }
-    return {
+    var texture = {
         path: filePath.replace(/\\/g, '/'),
-        ratio: node._effectTextureRatio || this.getEffectTextureRatio(node, leds, maxColumns),
+        ratio: node._effectTextureRatio || this.getEffectTextureRatio(node, leds, maxColumns, previewScale),
         signature: sig
     };
+    if (node) {
+        node._effectTextureKey = cacheKey;
+        node._effectTextureResult = texture;
+        node._lastEffectTexture = texture;
+    }
+    if (node && node._effectEditing) node._effectTextureCache = texture;
+    return texture;
 }
 
-IgnisProject.prototype.getEffectTextureRatio = function (node, leds, maxColumns)
+IgnisProject.prototype.downsampleEffectImageData = function (image, outWidth, outHeight)
 {
+    outWidth = Math.max(1, parseInt(outWidth));
+    outHeight = Math.max(1, parseInt(outHeight));
+    if (!image || image.width == outWidth && image.height == outHeight) return image;
+
+    var out = {
+        width: outWidth,
+        height: outHeight,
+        data: new Uint8ClampedArray(outWidth * outHeight * 4)
+    };
+
+    var scaleX = image.width / outWidth;
+    var scaleY = image.height / outHeight;
+    for (var y = 0; y < outHeight; y++) {
+        var y0 = Math.floor(y * scaleY);
+        var y1 = Math.max(y0 + 1, Math.ceil((y + 1) * scaleY));
+        if (y1 > image.height) y1 = image.height;
+        for (var x = 0; x < outWidth; x++) {
+            var x0 = Math.floor(x * scaleX);
+            var x1 = Math.max(x0 + 1, Math.ceil((x + 1) * scaleX));
+            if (x1 > image.width) x1 = image.width;
+
+            var r = 0, g = 0, b = 0, a = 0, count = 0;
+            for (var sy = y0; sy < y1; sy++) {
+                var row = sy * image.width * 4;
+                for (var sx = x0; sx < x1; sx++) {
+                    var sp = row + sx * 4;
+                    r += image.data[sp];
+                    g += image.data[sp + 1];
+                    b += image.data[sp + 2];
+                    a += image.data[sp + 3];
+                    count++;
+                }
+            }
+
+            var dp = (y * outWidth + x) * 4;
+            out.data[dp] = Math.round(r / count);
+            out.data[dp + 1] = Math.round(g / count);
+            out.data[dp + 2] = Math.round(b / count);
+            out.data[dp + 3] = Math.round(a / count);
+        }
+    }
+
+    return out;
+}
+
+IgnisProject.prototype.getEffectTextureRatio = function (node, leds, maxColumns, previewScale)
+{
+    previewScale = Math.max(1, parseInt(previewScale || 1));
     var frequency = Math.max(1, parseInt(node.frequency || 40));
     var cols = Math.max(1, Math.ceil((node.duration || 1000) * frequency / 1000));
+    cols *= previewScale;
     if (maxColumns && cols > maxColumns) cols = maxColumns;
-    return cols / Math.max(1, parseInt(leds || this.leds || config.project.default_leds || 170));
+    return cols / Math.max(1, parseInt(leds || this.leds || config.project.default_leds || 170) * previewScale);
 }
 
 IgnisProject.prototype.cloneEffectImageData = function (image)
@@ -2265,6 +2366,12 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
     options = options || {};
     var logicalLeds = Math.max(1, parseInt(options.leds || this.leds || config.project.default_leds || 170));
     var previewScale = Math.max(1, Math.min(4, parseInt(options.previewScale || 1)));
+    var frequency = Math.max(1, Math.min(parseInt(node.frequency || 40), config.project.max_line_frequency || 2500));
+    var fullCols = Math.max(1, Math.ceil((node.duration || 1000) * frequency / 1000));
+    if (options.downsample && options.maxRenderPixels) {
+        var estimatedPixels = fullCols * logicalLeds * previewScale * previewScale;
+        if (estimatedPixels > options.maxRenderPixels) previewScale = 1;
+    }
     var leds = logicalLeds * previewScale;
     if (previewScale > 1) {
         node = $.extend(true, {}, node);
@@ -2272,16 +2379,17 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
         if (node.effectSize !== undefined) node.effectSize = Math.max(1, Math.round(parseInt(node.effectSize || 1) * previewScale));
         if (node.mgap !== undefined) node.mgap = Math.max(0, Math.round(parseInt(node.mgap || 0) * previewScale));
     }
-    var frequency = Math.max(1, Math.min(parseInt(node.frequency || 40), config.project.max_line_frequency || 2500));
-    var fullCols = Math.max(1, Math.ceil((node.duration || 1000) * frequency / 1000));
-    var cols = options.columns ? parseInt(options.columns) : fullCols * previewScale;
+    var outputCols = options.columns ? parseInt(options.columns) : fullCols;
+    var cols = options.columns ? outputCols : outputCols * previewScale;
     if (options.maxColumns && cols > options.maxColumns) cols = options.maxColumns;
     cols = Math.max(1, cols);
+    var finalCols = options.downsample ? Math.max(1, Math.ceil(cols / previewScale)) : cols;
+    var finalLeds = options.downsample ? logicalLeds : leds;
 
     var image = { width: cols, height: leds, data: new Uint8ClampedArray(cols * leds * 4) };
     var effectId = this.ignis.library.normalizeEffectId(node.effectId || node.id || node.hash);
     var colors = ((node.effectColors && node.effectColors.length) ? node.effectColors : (node.colors && node.colors.length ? node.colors : ['#ff6000', '#00b4ff', '#ffffff'])).map(this.effectColorToRgb);
-    var speed = Math.max(10, Math.min(parseInt(node.effectSpeed || node.speed || 100), 1000));
+    var speed = this.ignis.library.clampEffectSpeedNumber(node.effectSpeed || node.speed || 128);
     var inten = Math.max(0, Math.min(parseInt(node.effectIntensity || node.intensity || 128), 255));
     var size = Math.max(1, Math.min(parseInt(node.effectSize || node.size || 3), leds));
     if (node.effectPaletteId === undefined && node.paletteId !== undefined) node.effectPaletteId = node.paletteId;
@@ -2325,6 +2433,15 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
         buffer[p + 1] = Math.min(255, buffer[p + 1] + Math.trunc(c.g * scale / 255));
         buffer[p + 2] = Math.min(255, buffer[p + 2] + Math.trunc(c.b * scale / 255));
     }
+    function blendPixel(i, c, scale) {
+        if (i < 0 || i >= leds) return;
+        scale = u8(scale);
+        var inv = 255 - scale;
+        var p = i * 3;
+        buffer[p] = Math.min(255, Math.trunc((buffer[p] * inv + c.r * scale) / 255));
+        buffer[p + 1] = Math.min(255, Math.trunc((buffer[p + 1] * inv + c.g * scale) / 255));
+        buffer[p + 2] = Math.min(255, Math.trunc((buffer[p + 2] * inv + c.b * scale) / 255));
+    }
     function wave8(x) {
         var v = ((Math.floor(x) % 256) + 256) & 255;
         return v < 128 ? v << 1 : 255 - ((v - 128) << 1);
@@ -2348,13 +2465,60 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
         var wrap = leds - d;
         return d < wrap ? d : wrap;
     }
+    function circularDistanceQ8(aQ8, bQ8) {
+        var spanQ8 = Math.max(1, leds * 256);
+        var d = Math.abs(aQ8 - bQ8) % spanQ8;
+        return d > spanQ8 / 2 ? spanQ8 - d : d;
+    }
     function randomLed() {
         rng ^= (rng << 13); rng >>>= 0;
         rng ^= (rng >>> 17); rng >>>= 0;
         rng ^= (rng << 5); rng >>>= 0;
         return leds ? rng % leds : 0;
     }
+    function drawSoftBlob(centerQ8, width, c, scale) {
+        width = Math.max(1, width);
+        var spanQ8 = Math.max(1, leds * 256);
+        centerQ8 = ((centerQ8 % spanQ8) + spanQ8) % spanQ8;
+        var limitQ8 = width * 256 + 255;
+        for (var i = 0; i < leds; i++) {
+            var d = circularDistanceQ8(i * 256, centerQ8);
+            if (d > limitQ8) continue;
+            addPixel(i, c, (limitQ8 - d) * scale / limitQ8);
+        }
+    }
+    function drawSoftTrail(headQ8, tail, c, scale, reverse) {
+        tail = Math.max(1, tail);
+        var spanQ8 = Math.max(1, leds * 256);
+        headQ8 = ((headQ8 % spanQ8) + spanQ8) % spanQ8;
+        var limitQ8 = tail * 256 + 255;
+        for (var i = 0; i < leds; i++) {
+            var pixelQ8 = i * 256;
+            var dist = reverse ? (pixelQ8 + spanQ8 - headQ8) % spanQ8
+                               : (headQ8 + spanQ8 - pixelQ8) % spanQ8;
+            if (dist > limitQ8) continue;
+            addPixel(i, c, (limitQ8 - dist) * scale / limitQ8);
+        }
+    }
+    function drawSoftSegment(startQ8, width, c, scale) {
+        width = Math.max(1, width);
+        var spanQ8 = Math.max(1, leds * 256);
+        startQ8 = ((startQ8 % spanQ8) + spanQ8) % spanQ8;
+        var lenQ8 = width * 256;
+        var edgeQ8 = Math.min(512, Math.max(128, Math.floor(lenQ8 / 3)));
+        for (var i = 0; i < leds; i++) {
+            var pixelQ8 = i * 256;
+            var dist = (pixelQ8 + spanQ8 - startQ8) % spanQ8;
+            if (dist > lenQ8) continue;
+            var edge = Math.min(dist, lenQ8 - dist);
+            var alpha = edge >= edgeQ8 ? scale : scale * edge / edgeQ8;
+            blendPixel(i, c, alpha);
+        }
+    }
     function drawBlob(center, width, c, scale) {
+        drawSoftBlob(center * 256, width, c, scale);
+    }
+    function drawHardBlob(center, width, c, scale) {
         width = Math.max(1, width);
         for (var i = 0; i < leds; i++) {
             var d = circularDistance(i, center);
@@ -2364,7 +2528,48 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
     }
     function palette(pos) { return that.effectPaletteAt(node, pos, colors); }
     function lake(pos) { return that.effectLakeColor(node, pos, colors); }
-    function speedStep() { return 1 + Math.floor(speed / 7); }
+    function scaledSpeed() { return Math.floor((speed * 1000 + 127) / 255); }
+    function speedDivisor() {
+        switch (effectId) {
+            case 14:
+            case 15:
+            case 16:
+            case 18:
+            case 39:
+            case 40:
+            case 41:
+            case 45:
+            case 48:
+            case 50:
+            case 52:
+                return 36;
+            case 21:
+            case 22:
+            case 31:
+            case 32:
+            case 43:
+            case 44:
+            case 46:
+            case 47:
+            case 49:
+            case 51:
+                return 30;
+            case 28:
+            case 29:
+            case 30:
+            case 33:
+            case 34:
+            case 42:
+                return 24;
+            case 23:
+            case 26:
+            case 27:
+                return 40;
+            default:
+                return 26;
+        }
+    }
+    function speedStep() { return 1 + Math.floor(scaledSpeed() / speedDivisor()); }
     function renderAndroidCall() {
         var maxWidth = Math.max(1, Math.min(size, leds));
         var fg = colors[0] || palette(0);
@@ -2409,12 +2614,17 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                 for (var i = 0; i < leds; i++) setPixel(i, palette(0), 255);
                 break;
             case 2: {
-                var androidFps = Math.max(1, speed / 5);
-                var targetCall = Math.floor(frame * androidFps / frequency);
-                while (androidRenderedCall < targetCall) {
-                    renderAndroidCall();
-                    androidRenderedCall++;
+                clear();
+                var fg = colors[0] || palette(0);
+                var bg = colors[1] || { r: 0, g: 0, b: 0 };
+                if (colors[1]) {
+                    for (var i = 0; i < leds; i++) setPixel(i, bg, 255);
                 }
+                var width = Math.max(2, Math.min(size, leds));
+                var spanQ8 = Math.max(1, leds * 256);
+                var travelQ8 = spanQ8 + width * 512;
+                var posQ8 = ((frame * Math.max(60, scaledSpeed() * 2)) % travelQ8) - width * 256;
+                drawSoftSegment(posQ8, width, fg, 255);
                 break;
             }
             case 10:
@@ -2461,15 +2671,17 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
             case 15: {
                 clear();
                 var count = effectId == 14 ? 2 : 3;
-                var tail = Math.max(1, size || (count == 2 ? 8 : 6));
-                var base = (phase >> 3) % leds;
-                for (var h = 0; h < count; h++) {
-                    var head = Math.floor(base + h * leds / count) % leds;
-                    var c = palette(h * 255 / count + phase);
-                    for (var i = 0; i < leds; i++) {
-                        var dist = (head + leds - i) % leds;
-                        if (dist > tail) continue;
-                        addPixel(i, c, (tail - dist + 1) * 255 / (tail + 1));
+                var tail = Math.max(1, size || (count == 2 ? 8 : 5));
+                var spanQ8 = Math.max(1, leds * 256);
+                var baseQ8 = (phase * 32) % spanQ8;
+                if (count == 2) {
+                    var mirrorQ8 = (spanQ8 + spanQ8 - 256 - baseQ8) % spanQ8;
+                    drawSoftTrail(baseQ8, tail, palette(phase), 255);
+                    drawSoftTrail(mirrorQ8, tail, palette(phase + 128), 255, true);
+                } else {
+                    for (var h = 0; h < count; h++) {
+                        var headQ8 = (baseQ8 + h * spanQ8 / count) % spanQ8;
+                        drawSoftTrail(headQ8, tail, palette(h * 85 + phase), 255);
                     }
                 }
                 break;
@@ -2477,9 +2689,10 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
             case 16: {
                 clear();
                 var width = Math.max(1, size);
-                var spacing = width * 3 + 2;
-                var base = (phase >> 3) % leds;
-                for (var i = 0; i < 4; i++) drawBlob((base + i * spacing) % leds, width, palette(i * 64 + phase), 235);
+                var spanQ8 = Math.max(1, leds * 256);
+                var spacingQ8 = (width * 3 + 2) * 256;
+                var baseQ8 = (phase * 32) % spanQ8;
+                for (var i = 0; i < 4; i++) drawSoftBlob(baseQ8 + i * spacingQ8, width, palette(i * 64 + phase), 235);
                 break;
             }
             case 17:
@@ -2494,9 +2707,9 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
             case 18: {
                 fade(165 + inten / 4);
                 var tail = Math.max(1, size || 10);
-                var head = (phase >> 4) % leds;
+                var headQ8 = (phase * 16) % Math.max(1, leds * 256);
                 var c = palette(phase >> 1);
-                for (var d = 0; d <= tail; d++) addPixel((head + leds - d) % leds, c, (tail - d + 1) * 255 / (tail + 1));
+                drawSoftTrail(headQ8, tail, c, 255);
                 break;
             }
             case 19:
@@ -2513,8 +2726,8 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                 clear();
                 for (var i = 0; i < 3; i++) {
                     var w = wave8((phase >> (i == 0 ? 1 : 2)) + i * 85);
-                    var center = Math.floor(w * Math.max(1, leds - 1) / 255);
-                    drawBlob(center, size || 5, palette(i * 85 + phase), 240);
+                    var centerQ8 = w * Math.max(1, leds - 1) * 256 / 255;
+                    drawSoftBlob(centerQ8, size || 5, palette(i * 85 + phase), 240);
                 }
                 break;
             case 21: {
@@ -2531,7 +2744,7 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                     if (diff > size) continue;
                     addPixel(i, c, (size - diff + 1) * 255 / (size + 1));
                 }
-                rippleRadius += 1 + (speed > 500 ? 1 : 0);
+                rippleRadius += 1 + (scaledSpeed() > 650 ? 1 : 0);
                 break;
             }
             case 22:
@@ -2542,8 +2755,8 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                 }
                 break;
             case 23: {
-                var cycle = 24 + Math.trunc((1010 - speed) / 18);
-                var onTime = 2 + Math.trunc(inten * (Math.trunc(cycle / 2) + 1) / 255);
+                var cycle = 8 + Math.trunc((1000 - scaledSpeed()) / 16);
+                var onTime = 1 + Math.trunc(inten * (Math.trunc(cycle / 2) + 1) / 255);
                 clear();
                 if ((frameIndex % cycle) < onTime) {
                     var c = palette(phase >> 1);
@@ -2593,11 +2806,12 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                     var local = (phase >> 2) + b * 73;
                     var origin = Math.trunc(hash8(b * 41, local >> 6) * span / 255);
                     var radius = wave8(local);
-                    var centerA = (origin + Math.trunc(radius * span / 510)) % span;
-                    var centerB = (origin + span - Math.trunc(radius * span / 510)) % span;
+                    var offsetQ8 = radius * span * 256 / 510;
+                    var centerA = (origin * 256 + offsetQ8) % (span * 256);
+                    var centerB = (origin * 256 + span * 256 - offsetQ8) % (span * 256);
                     var c = palette(b * 70 + phase);
-                    drawBlob(centerA, width, c, 210);
-                    drawBlob(centerB, width, c, 210);
+                    drawSoftBlob(centerA, width, c, 210);
+                    drawSoftBlob(centerB, width, c, 210);
                 }
                 break;
             }
@@ -2606,9 +2820,9 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                 fade(110 + inten / 3);
                 var width = Math.max(1, size || 4);
                 var span = Math.max(1, leds - 1);
-                var center = Math.trunc(wave8(phase >> 1) * span / 255);
-                drawBlob(center, width, palette(phase >> 1), 255);
-                if (effectId == 30) drawBlob(span - center, width, palette(phase + 128), 255);
+                var centerQ8 = wave8(phase >> 1) * span * 256 / 255;
+                drawSoftBlob(centerQ8, width, palette(phase >> 1), 255);
+                if (effectId == 30) drawSoftBlob(span * 256 - centerQ8, width, palette(phase + 128), 255);
                 break;
             }
             case 31: {
@@ -2635,8 +2849,8 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                 var dots = 3 + Math.trunc(inten / 43);
                 var span = Math.max(1, leds - 1);
                 for (var d = 0; d < dots; d++) {
-                    var pos = Math.trunc(wave8((phase >> 1) + d * 37) * span / 255);
-                    addPixel(pos, palette(d * 255 / dots + phase), 230);
+                    var posQ8 = wave8((phase >> 1) + d * 37) * span * 256 / 255;
+                    drawSoftBlob(posQ8, 1, palette(d * 255 / dots + phase), 230);
                 }
                 break;
             }
@@ -2644,8 +2858,8 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                 fade(135 + inten / 4);
                 var width = Math.max(1, size || 3);
                 var span = Math.max(1, leds - 1);
-                var pos = Math.trunc(wave8(phase >> 1) * span / 255);
-                drawBlob(pos, width, palette(phase >> 1), 255);
+                var posQ8 = wave8(phase >> 1) * span * 256 / 255;
+                drawSoftBlob(posQ8, width, palette(phase >> 1), 255);
                 break;
             }
             case 35:
@@ -2689,8 +2903,8 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                 var width = Math.max(1, size || 2);
                 var span = leds || 1;
                 for (var d = 0; d < count; d++) {
-                    var pos = (Math.trunc((phase >> 3) * (d + 1)) + Math.trunc(d * span / count)) % span;
-                    drawBlob(pos, width, palette(d * 255 / count + phase), 230);
+                    var posQ8 = ((phase * 32) * (d + 1) + d * span * 256 / count) % (span * 256);
+                    drawSoftBlob(posQ8, width, palette(d * 255 / count + phase), 230);
                 }
                 break;
             }
@@ -2698,13 +2912,11 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                 clear();
                 var tail = Math.max(1, size || 8);
                 var span = leds || 1;
-                var a = (phase >> 3) % span;
-                var b = (span - 1) - a;
-                for (var d = 0; d <= tail; d++) {
-                    var bri = (tail - d + 1) * 255 / (tail + 1);
-                    addPixel((a + span - d) % span, palette(phase), bri);
-                    addPixel((b + d) % span, palette(phase + 128), bri);
-                }
+                var spanQ8 = span * 256;
+                var aQ8 = (phase * 32) % spanQ8;
+                var bQ8 = (spanQ8 + spanQ8 - 256 - aQ8) % spanQ8;
+                drawSoftTrail(aQ8, tail, palette(phase), 255);
+                drawSoftTrail(bQ8, tail, palette(phase + 128), 255, true);
                 break;
             }
             case 41: {
@@ -2712,11 +2924,17 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                 var tail = Math.max(1, size || 6);
                 var half = Math.floor(leds / 2);
                 var span = half || 1;
-                var p0 = (phase >> 3) % span;
-                for (var d = 0; d <= tail; d++) {
-                    var bri = (tail - d + 1) * 255 / (tail + 1);
-                    addPixel((p0 + span - d) % span, palette(phase), bri);
-                    addPixel(half + ((span - 1 - p0 + d) % span), palette(phase + 96), bri);
+                var spanQ8 = span * 256;
+                var p0Q8 = (phase * 32) % spanQ8;
+                var limitQ8 = tail * 256 + 255;
+                for (var i = 0; i < leds; i++) {
+                    var right = i >= half;
+                    var localQ8 = (right ? (i - half) : i) * 256;
+                    var headQ8 = right ? (spanQ8 + spanQ8 - 256 - p0Q8) % spanQ8 : p0Q8;
+                    var dist = right ? (localQ8 + spanQ8 - headQ8) % spanQ8
+                                     : (headQ8 + spanQ8 - localQ8) % spanQ8;
+                    if (dist > limitQ8) continue;
+                    addPixel(i, palette(phase + (right ? 96 : 0)), (limitQ8 - dist) * 255 / limitQ8);
                 }
                 break;
             }
@@ -2724,9 +2942,9 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                 clear();
                 var width = Math.max(1, size || 4);
                 var span = Math.max(1, leds - 1);
-                var pos = Math.trunc(wave8(phase >> 1) * span / 255);
-                drawBlob(pos, width, palette(phase), 255);
-                drawBlob(span - pos, width, palette(phase + 128), 255);
+                var posQ8 = wave8(phase >> 1) * span * 256 / 255;
+                drawSoftBlob(posQ8, width, palette(phase), 255);
+                drawSoftBlob(span * 256 - posQ8, width, palette(phase + 128), 255);
                 break;
             }
             case 43:
@@ -2753,8 +2971,8 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                 var count = 2 + Math.trunc(inten / 40);
                 var span = leds || 1;
                 for (var k = 0; k < count; k++) {
-                    var pos = ((phase >> 3) + Math.trunc(k * span / count)) % span;
-                    drawBlob(pos, width, palette(k * 255 / count + phase), 255);
+                    var posQ8 = (phase * 32 + k * span * 256 / count) % (span * 256);
+                    drawSoftBlob(posQ8, width, palette(k * 255 / count + phase), 255);
                 }
                 break;
             }
@@ -2782,8 +3000,8 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                 var bars = 2 + Math.trunc(inten / 64);
                 var span = leds || 1;
                 for (var b = 0; b < bars; b++) {
-                    var pos = (Math.trunc((phase >> 2) * (b + 1)) + Math.trunc(b * span / bars)) % span;
-                    drawBlob(pos, width, palette(phase + b * 70), 255);
+                    var posQ8 = ((phase * 64) * (b + 1) + b * span * 256 / bars) % (span * 256);
+                    drawSoftBlob(posQ8, width, palette(phase + b * 70), 255);
                 }
                 break;
             }
@@ -2800,10 +3018,11 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                 clear();
                 var width = Math.max(1, size || 5);
                 var span = leds || 1;
-                var pos = (phase >> 2) % span;
-                drawBlob(pos, width, palette(phase), 255);
-                drawBlob((pos + Math.floor(span / 3)) % span, width, palette(phase + 85), 220);
-                drawBlob((pos + Math.floor(2 * span / 3)) % span, width, palette(phase + 170), 220);
+                var spanQ8 = span * 256;
+                var posQ8 = (phase * 64) % spanQ8;
+                drawSoftBlob(posQ8, width, palette(phase), 255);
+                drawSoftBlob((posQ8 + spanQ8 / 3) % spanQ8, width, palette(phase + 85), 220);
+                drawSoftBlob((posQ8 + (2 * spanQ8) / 3) % spanQ8, width, palette(phase + 170), 220);
                 break;
             case 51:
                 clear();
@@ -2819,16 +3038,13 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                 clear();
                 var tail = Math.max(1, size || 10);
                 var span = leds || 1;
-                var head = (phase >> 3) % span;
+                var headQ8 = (phase * 32) % (span * 256);
                 var c = palette(phase >> 1);
-                for (var d = 0; d <= tail; d++) {
-                    var idx = (head + span - d) % span;
-                    addPixel(idx, c, (tail - d + 1) * 255 / (tail + 1));
-                }
+                drawSoftTrail(headQ8, tail, c, 255);
                 var sparks = Math.trunc(inten / 64);
                 for (var s = 0; s < sparks; s++) {
-                    var idx = (head + Math.floor(span / 2) + s * 7) % span;
-                    setPixel(idx, palette(phase + 96 + s * 53), 120);
+                    var sparkQ8 = (headQ8 + span * 128 + s * 7 * 256) % (span * 256);
+                    drawSoftBlob(sparkQ8, 1, palette(phase + 96 + s * 53), 120);
                 }
                 break;
             }
@@ -2864,5 +3080,9 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
         }
     }
 
-    return this.applyEffectTransforms(image, node);
+    image = this.applyEffectTransforms(image, node);
+    if (options.downsample && previewScale > 1) {
+        image = this.downsampleEffectImageData(image, finalCols, finalLeds);
+    }
+    return image;
 }

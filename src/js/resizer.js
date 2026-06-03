@@ -279,7 +279,6 @@ IgnisResizer.prototype.stickMirrorGap = function (hash, leds, gap, rotate, rever
 
                     this.resize('point', fn_mir, fn_tex, 512, 512, $.proxy(function () {
                         if (callback) callback();
-                        console.log('MIRRORED!');
                     }, this));
                 }, this);
                 img_bot.src = bot;

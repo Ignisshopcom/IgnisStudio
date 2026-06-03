@@ -301,7 +301,7 @@ IgnisTimeline.prototype.updateNodeElementImage = function (element, node, leds)
         element.attr('display-image', displayKey);
         element.addClass('timeline-effect');
         if (this.ignis.project && this.ignis.project.effectPreviewDataUrl) {
-            element.css('background-image', 'url(' + this.ignis.project.effectPreviewDataUrl(node, 520, 128) + ')');
+            element.css('background-image', 'url(' + this.ignis.project.effectPreviewDataUrl(node, 320, 80) + ')');
         } else {
             element.css('background-image', 'linear-gradient(90deg,' + colors.join(',') + ')');
         }
@@ -370,7 +370,7 @@ IgnisTimeline.prototype.update = function (timestamp)
                 var effectTexture = this.ignis.project.ensureEffectTexture(current_node, tl.leds);
                 current_hash = effectTexture.signature;
                 file_hash = 'effect_' + effectTexture.signature;
-                texturePath = effectTexture.path + '?t=' + Date.now();
+                texturePath = effectTexture.path + '?v=' + effectTexture.signature;
                 ratio = effectTexture.ratio;
             }
             if (current_node != this.prev_nodes[pid] || file_hash != this.prev_hashes[pid]) {
@@ -810,7 +810,7 @@ IgnisTimeline.prototype.onMouseDown = function (e)
 
             if (n.type == 'effect') {
                 this.create_element.addClass('timeline-effect');
-                this.create_element.css('background-image', 'url(' + this.ignis.project.effectPreviewDataUrl(n, 520, 128) + ')');
+                this.create_element.css('background-image', 'url(' + this.ignis.project.effectPreviewDataUrl(n, 320, 80) + ')');
                 this.create_element.text(n.name || 'Effect');
             } else if (this.ignis.library.thumbExist(n.hash)) {
                 var t = Math.floor((new Date()).getTime() / 1000);

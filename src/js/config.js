@@ -18,7 +18,7 @@ const config = {
             '170 pixels': { leds: 170, acc: true },
         },
         pixel_count_custom: true,
-        pixel_url: 'http://petr.holly.darkyork.com/ignis/pixel.json',
+        pixel_url: '',
         node_calculate_frequency: false,
         node_frequency: 2500,
         max_line_frequency: 2500,

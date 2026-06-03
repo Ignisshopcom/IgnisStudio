@@ -1,5 +1,5 @@
 #preview-panel {
-    background-color: #111111;
+    background-color: #050607;
 
     #preview-canvas, #preview-overlay {
         display: block;
@@ -63,12 +63,17 @@
             margin-left: 4px;
             line-height: 32px;
             text-align: center;
+            border: 1px solid rgba(255,255,255,0.06);
+            box-shadow: 0 4px 14px rgba(0,0,0,0.28);
+            transition: background-color .12s ease, border-color .12s ease, transform .12s ease;
             i {
                 margin-top: 7px;
                 font-size: 20px;
             }
             &:hover {
                 background-color: #333;
+                border-color: fade(@accent, 55%);
+                transform: translateY(-1px);
             }
             &.selected {
                 background-color: #c03500;
@@ -89,12 +94,17 @@
             margin-left: 4px;
             line-height: 32px;
             text-align: center;
+            border: 1px solid rgba(255,255,255,0.06);
+            box-shadow: 0 4px 14px rgba(0,0,0,0.28);
+            transition: background-color .12s ease, border-color .12s ease, transform .12s ease;
             i {
                 margin-top: 7px;
                 font-size: 20px;
             }
             &:hover {
                 background-color: #333;
+                border-color: fade(@accent, 55%);
+                transform: translateY(-1px);
             }
             &.selected {
                 background-color: #c03500;

@@ -27,7 +27,7 @@
         top: 29px;
         right: 0;
         bottom: 0;
-        background-color: #222222;
+        background-color: @bg1;
         font-size: 0;
         overflow-y: scroll;
         overflow-x: hidden;
@@ -42,7 +42,7 @@
             background-position: center center;
             background-repeat: repeat;
             opacity: 0.75;
-            transition: opacity .2s linear;
+            transition: opacity .14s ease, transform .14s ease, box-shadow .14s ease;
             margin: 1px;
             overflow: hidden;
 
@@ -72,8 +72,12 @@
             &:hover, &.selected {
                 opacity: 1;
             }
+            &:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 6px 16px rgba(0,0,0,0.28);
+            }
             &.selected {
-                box-shadow: inset 0 0 0 3px @accent, 0 0 0 1px #000;
+                box-shadow: inset 0 0 0 3px @accent, 0 0 0 1px #000, @focusShadow;
             }
             &:hover {
                 .library-rotate-button {
@@ -169,13 +173,13 @@
             margin: 1px;
             padding: 0;
             background: #000;
-            border: 1px solid #262626;
+            border: 1px solid @line;
             color: #eee;
             cursor: grab;
             overflow: hidden;
             position: relative;
             opacity: 0.94;
-            transition: opacity .12s linear, border-color .12s linear, box-shadow .12s linear;
+            transition: opacity .12s ease, border-color .12s ease, box-shadow .12s ease, transform .12s ease;
 
             strong {
                 position: absolute;
@@ -199,7 +203,10 @@
             &:hover, &.selected {
                 opacity: 1;
                 border-color: @accent;
-                box-shadow: inset 0 0 0 2px @accent, 0 0 0 1px #000;
+                box-shadow: inset 0 0 0 2px @accent, @softShadow;
+            }
+            &:hover {
+                transform: translateY(-1px);
             }
         }
 
@@ -214,16 +221,18 @@
                 width: 100%;
                 min-height: 30px;
                 border: 1px solid #444;
-                background: #151515;
+                background: @bg0;
                 color: #eee;
                 outline: none;
+                transition: background-color .12s ease, border-color .12s ease, box-shadow .12s ease;
             }
 
             button {
                 cursor: pointer;
                 &:hover, &.active {
                     border-color: @accent;
-                    background: #242424;
+                    background: @bg2;
+                    box-shadow: @focusShadow;
                 }
             }
 

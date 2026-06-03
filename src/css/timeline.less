@@ -57,7 +57,7 @@
     }
 }
 #timeline-left-panel {
-    background-color: #333333;
+    background-color: @bg2;
     #timeline-height-switch {
         position: absolute;
         bottom: 5px;
@@ -70,7 +70,7 @@
         font-size: 18px;
         padding-top: 6px;
         &:hover {
-            box-shadow: rgba(255,255,255,0.5) 0 0 10px;
+            box-shadow: @focusShadow;
         }
     }
     #timeline-switches {
@@ -79,7 +79,7 @@
         bottom: 40px;
         left: 0;
         right: 0;
-        background-color: #111;
+        background-color: @bg0;
         overflow: hidden;
         #timeline-switches-scroll {
             position: absolute;
@@ -88,7 +88,8 @@
                 height: 120px;
                 width: 30px;
                 margin-left: 10px;
-                background-color: #444;
+                background-color: #383d45;
+                transition: background-color .12s ease, box-shadow .12s ease, width .12s ease, margin-left .12s ease;
                 .number {
                     position: absolute;
                     left: 0;
@@ -180,7 +181,7 @@
     }
 }
 #timeline-panel {
-    background-color: #333333;
+    background-color: @bg2;
     z-index: 200;
     #timeline-canvas {
         position: absolute;
@@ -253,9 +254,13 @@
                     background-position: left top;
                     background-repeat: repeat-x;
                     z-index: 99;
+                    border-radius: 2px;
+                    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+                    transition: opacity .12s ease, box-shadow .12s ease;
 
                     &:hover {
                         opacity: 1;
+                        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12), 0 5px 15px rgba(0,0,0,0.25);
                     }
                     &.selected {
                         opacity: 1;

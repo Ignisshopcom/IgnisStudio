@@ -97,8 +97,14 @@ IgnisProperties.prototype.autoEnumerate = function ()
 
 IgnisProperties.prototype.updateDevicesData = function (data)
 {
+    if (!config.project.pixel_url) {
+        this.updateDevices();
+        return;
+    }
     $.post(config.project.pixel_url, $.proxy(function (data) {
         this.ignis.userconf.set('led_definitions', data);
+        this.updateDevices();
+    }, this)).fail($.proxy(function () {
         this.updateDevices();
     }, this));
 }
@@ -233,6 +239,8 @@ IgnisProperties.prototype.init = function ()
     $('#filename-editable-btn').on('click', $.proxy(this.filenameEditableToggle, this));
     $('#effect-properties-field').on('input', '[data-effect-range]', $.proxy(this.onEffectPropertyRangeInput, this));
     $('#effect-properties-field').on('change mouseup touchend', '[data-effect-range]', $.proxy(this.onEffectPropertyRangeCommit, this));
+    $('#effect-properties-field').on('input', '[data-effect-value]', $.proxy(this.onEffectPropertyValueInput, this));
+    $('#effect-properties-field').on('change mouseup touchend', '[data-effect-value]', $.proxy(this.onEffectPropertyValueCommit, this));
     $('#effect-properties-field').on('input keyup change', '[data-effect-color]', $.proxy(this.onEffectPropertyColor, this));
     $('#effect-properties-field').on('click', '[data-effect-palette]', $.proxy(this.onEffectPropertyPalette, this));
     $('#effect-properties-field').on('click', '[data-effect-toggle]', $.proxy(this.onEffectPropertyToggle, this));
@@ -1180,14 +1188,14 @@ IgnisProperties.prototype.renderEffectProperties = function (node)
     var library = this.ignis.library;
     var effect = library.getEffectById(node.effectId);
     var slots = library.getEffectColorSlots(effect.id);
-    node.effectSpeed = library.clampEffectNumber(node.effectSpeed, 10, 1000);
+    node.effectSpeed = library.clampEffectSpeedNumber(node.effectSpeed);
     node.effectIntensity = library.clampEffectNumber(node.effectIntensity, 0, 255);
     node.effectSize = library.clampEffectNumber(node.effectSize, 1, effect.sizeMax || 40);
     node.effectColors = (node.effectColors && node.effectColors.length ? node.effectColors : effect.colors || ['#ff6000', '#00b4ff', '#ffffff']).slice(0);
 
     box.append($('<label class="effect-property-name"></label>').html('<i class="fas fa-magic"></i> ' + effect.name));
 
-    if (effect.speed) box.append(this.createEffectPropertyRange(effect.speed, 'effectSpeed', node.effectSpeed, 10, 1000, uid));
+    if (effect.speed) box.append(this.createEffectPropertyRange(effect.speed, 'effectSpeed', node.effectSpeed, 0, 255, uid));
     if (effect.intensity) box.append(this.createEffectPropertyRange(effect.intensity, 'effectIntensity', node.effectIntensity, 0, 255, uid));
     if (effect.size) box.append(this.createEffectPropertyRange(effect.size, 'effectSize', node.effectSize, 1, effect.sizeMax || 40, uid));
 
@@ -1225,13 +1233,6 @@ IgnisProperties.prototype.renderEffectProperties = function (node)
         btn.toggleClass('active', parseInt(node.effectPaletteId || 0) == pal.id);
         btn.append($('<span></span>').text(pal.name));
         btn.append($('<i></i>').css('background', 'linear-gradient(90deg,' + pal.colors.join(',') + ')'));
-        btn.on('click', (function (paletteId) {
-            return function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-                self.setEffectNodePalette(uid, paletteId);
-            };
-        })(pal.id));
         palettes.append(btn);
     }
     box.append(palettes);
@@ -1243,11 +1244,6 @@ IgnisProperties.prototype.renderEffectProperties = function (node)
     transforms.find('[data-effect-toggle]').each(function () {
         var key = $(this).attr('data-effect-toggle');
         $(this).toggleClass('active', !!node[key]);
-        $(this).on('click', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            self.toggleEffectNodeProperty(uid, key);
-        });
     });
     box.append(transforms);
 }
@@ -1259,8 +1255,6 @@ IgnisProperties.prototype.createEffectPropertyRange = function (label, key, valu
     var input = $('<input type="range">').attr({ min: min, max: max, step: 1, value: value, 'data-effect-range': key, 'data-effect-uid': uid });
     row.append(input);
     row.append($('<b></b>').text(value));
-    input.on('input', $.proxy(this.onEffectPropertyRangeInput, this));
-    input.on('change mouseup touchend', $.proxy(this.onEffectPropertyRangeCommit, this));
     return row;
 }
 
@@ -1274,8 +1268,6 @@ IgnisProperties.prototype.createEffectPropertyValueRange = function (uid, node)
     var input = $('<input type="range">').attr({ min: 0, max: 100, step: 1, value: value, 'data-effect-value': 'density', 'data-effect-uid': uid });
     row.append(input);
     row.append($('<b></b>').text(value + '%'));
-    input.on('input', $.proxy(this.onEffectPropertyValueInput, this));
-    input.on('change mouseup touchend', $.proxy(this.onEffectPropertyValueCommit, this));
     return row;
 }
 
@@ -1484,9 +1476,17 @@ IgnisProperties.prototype.updateEffectNode = function (node, patch, mode)
 {
     $.extend(node, patch || {});
     if (mode == 'light') {
+        node._effectEditing = true;
         this.refreshSelectedEffectPreview(node, false);
         return;
     }
+    node._effectEditing = false;
+    delete node._effectTextureCache;
+    delete node._effectTextureKey;
+    delete node._effectTextureResult;
+    delete node._lastEffectTexture;
+    delete node._effectPreviewDataUrlKey;
+    delete node._effectPreviewDataUrlCache;
     this.refreshSelectedEffectPreview(node, true);
     if (mode == 'rerender') this.renderEffectProperties(node);
 }
@@ -1542,14 +1542,15 @@ IgnisProperties.prototype.refreshSelectedEffectPreview = function (node, full)
 {
     var timeline = this.ignis.timeline;
     if (!timeline || !node) return;
+    if (!full) {
+        return;
+    }
     var el = $('#tlimg-' + node.uid);
     if (el.length && timeline.updateNodeElementImage) {
         el.attr('display-image', '');
         timeline.updateNodeElementImage(el, node, this.ignis.project.leds);
     }
-    if (full && this.ignis.library) {
-        this.ignis.library.refreshEffectTimeline();
-    } else if (this.ignis.preview) {
+    if (this.ignis.preview) {
         this.ignis.preview.nodeChanged();
     }
 }
@@ -1572,7 +1573,7 @@ IgnisProperties.prototype.onEffectPropertyRangeCommit = function (e)
     this.onEffectPropertyRangeInput(e);
     var uid = $(e.currentTarget).attr('data-effect-uid') || $('#effect-properties-field').attr('data-effect-uid');
     var node = this.getEffectNodeByUid(uid);
-    if (node) this.refreshSelectedEffectPreview(node, true);
+    if (node) this.updateEffectNode(node, {}, 'full');
 }
 
 IgnisProperties.prototype.onEffectPropertyValueInput = function (e)
@@ -1588,7 +1589,7 @@ IgnisProperties.prototype.onEffectPropertyValueCommit = function (e)
 {
     this.onEffectPropertyValueInput(e);
     var node = this.getEffectNodeByUid($(e.currentTarget).attr('data-effect-uid'));
-    if (node) this.refreshSelectedEffectPreview(node, true);
+    if (node) this.updateEffectNode(node, {}, 'full');
 }
 
 IgnisProperties.prototype.onEffectPropertyColor = function (e)

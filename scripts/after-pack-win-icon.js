@@ -3,6 +3,25 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 module.exports = async function afterPackWinIcon(context) {
+  if (context.electronPlatformName === 'darwin') {
+    const appName = `${context.packager.appInfo.productFilename}.app`;
+    const appPath = path.join(context.appOutDir, appName);
+
+    if (!fs.existsSync(appPath)) {
+      throw new Error(`Cannot ad-hoc sign macOS app, app was not found: ${appPath}`);
+    }
+
+    execFileSync('codesign', [
+      '--force',
+      '--deep',
+      '--sign',
+      '-',
+      '--timestamp=none',
+      appPath
+    ], { stdio: 'inherit' });
+    return;
+  }
+
   if (context.electronPlatformName !== 'win32') return;
 
   const projectDir = context.packager.info.projectDir;

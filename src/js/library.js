@@ -33,33 +33,33 @@ function IgnisLibrary(ignis)
         { id: 24, name: 'Fade', icon: 'fa-adjust', colors: ['#ff3b30', '#1e88e5', '#ffffff'], speed: 'Speed', intensity: 'Depth', size: null },
         { id: 25, name: 'Rainbow', icon: 'fa-rainbow', colors: ['#ff0033', '#ffe600', '#00e676'], speed: 'Speed', intensity: 'Spread', size: null },
         { id: 26, name: 'Twinkle', icon: 'fa-star', colors: ['#ffffff', '#7c4dff', '#00e5ff'], speed: 'Speed', intensity: 'Density', size: null },
-        { id: 27, name: 'Sparkle', icon: 'fa-sparkles', colors: ['#ffffff', '#ffb000', '#00d5ff'], speed: 'Speed', intensity: 'Amount', size: null },
+        { id: 27, name: 'Sparkle', icon: 'fa-sparkles', colors: ['#ffffff', '#ffb000', '#00d5ff'], speed: 'Speed', intensity: 'Density', size: null },
         { id: 28, name: 'Fireworks', icon: 'fa-burst', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: 'Bursts', size: 'Width', sizeMax: 24 },
-        { id: 29, name: 'Scanner', icon: 'fa-arrows-alt-h', colors: ['#ff0033', '#ffffff', '#00b4ff'], speed: 'Speed', intensity: 'Trail', size: 'Width', sizeMax: 32 },
-        { id: 30, name: 'Dual Scanner', icon: 'fa-exchange-alt', colors: ['#ff0033', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: 'Trail', size: 'Width', sizeMax: 32 },
-        { id: 31, name: 'Theater Chase', icon: 'fa-ellipsis-h', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: 'Spacing', size: 'Duty', sizeMax: 12 },
+        { id: 29, name: 'Scanner', icon: 'fa-arrows-alt-h', colors: ['#ff0033', '#ffffff', '#00b4ff'], speed: 'Speed', intensity: 'Fade', size: 'Width', sizeMax: 32 },
+        { id: 30, name: 'Scanner Dual', icon: 'fa-exchange-alt', colors: ['#ff0033', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: 'Fade', size: 'Width', sizeMax: 32 },
+        { id: 31, name: 'Theater', icon: 'fa-ellipsis-h', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: 'Spacing', size: 'Width', sizeMax: 16 },
         { id: 32, name: 'Color Wipe', icon: 'fa-fill-drip', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: null, size: null },
         { id: 33, name: 'Juggle', icon: 'fa-circle-notch', colors: ['#ff0033', '#00e676', '#40c4ff'], speed: 'Speed', intensity: 'Dots', size: null },
-        { id: 34, name: 'Sinelon', icon: 'fa-compress-arrows-alt', colors: ['#ff0033', '#ffffff', '#00b4ff'], speed: 'Speed', intensity: 'Trail', size: 'Width', sizeMax: 24 },
-        { id: 35, name: 'Fire Flicker', icon: 'fa-fire', colors: ['#000000', '#ff4800', '#ffe678'], speed: 'Speed', intensity: 'Heat', size: null },
+        { id: 34, name: 'Sinelon', icon: 'fa-compress-arrows-alt', colors: ['#ff0033', '#ffffff', '#00b4ff'], speed: 'Speed', intensity: 'Trail', size: 'Width', sizeMax: 32 },
+        { id: 35, name: 'Fire', icon: 'fa-fire', colors: ['#000000', '#ff4800', '#ffe678'], speed: 'Speed', intensity: 'Heat', size: null },
         { id: 36, name: 'Plasma', icon: 'fa-atom', colors: ['#ff00dc', '#00ffff', '#82ff00'], speed: 'Speed', intensity: 'Scale', size: null },
         { id: 37, name: 'Gradient', icon: 'fa-grip-lines', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: 'Spread', size: null },
         { id: 38, name: 'Breath', icon: 'fa-adjust', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: 'Floor', size: null },
-        { id: 39, name: 'Dots', icon: 'fa-braille', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: 'Count', size: 'Width', sizeMax: 16 },
+        { id: 39, name: 'Dots', icon: 'fa-braille', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: 'Count', size: 'Width', sizeMax: 18 },
         { id: 40, name: 'Counter Chase', icon: 'fa-random', colors: ['#ff3b30', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: null, size: 'Tail', sizeMax: 32 },
         { id: 41, name: 'Split Chase', icon: 'fa-compress-arrows-alt', colors: ['#ff6000', '#00e676', '#40c4ff'], speed: 'Speed', intensity: null, size: 'Tail', sizeMax: 32 },
         { id: 42, name: 'Collision', icon: 'fa-arrows-alt-h', colors: ['#ff0033', '#ffffff', '#00b4ff'], speed: 'Speed', intensity: null, size: 'Width', sizeMax: 32 },
-        { id: 43, name: 'Saw', icon: 'fa-signal', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: 'Frequency', size: null },
-        { id: 44, name: 'Chevron', icon: 'fa-angle-double-right', colors: ['#00ffd2', '#0050ff', '#ff00dc'], speed: 'Speed', intensity: 'Spacing', size: null },
-        { id: 45, name: 'Pulse Train', icon: 'fa-ellipsis-h', colors: ['#ffffff', '#ff6000', '#00b4ff'], speed: 'Speed', intensity: 'Pulses', size: 'Width', sizeMax: 24 },
+        { id: 43, name: 'Saw', icon: 'fa-signal', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: 'Width', size: null },
+        { id: 44, name: 'Chevron', icon: 'fa-angle-double-right', colors: ['#00ffd2', '#0050ff', '#ff00dc'], speed: 'Speed', intensity: 'Width', size: null },
+        { id: 45, name: 'Pulse Train', icon: 'fa-ellipsis-h', colors: ['#ffffff', '#ff6000', '#00b4ff'], speed: 'Speed', intensity: 'Count', size: 'Width', sizeMax: 24 },
         { id: 46, name: 'Cross Waves', icon: 'fa-wave-square', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: 'Frequency', size: null },
         { id: 47, name: 'Barber Pole', icon: 'fa-candy-cane', colors: ['#ff0000', '#ffffff', '#0046ff'], speed: 'Speed', intensity: 'Bands', size: null },
-        { id: 48, name: 'Scan Bars', icon: 'fa-bars', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: 'Bars', size: 'Width', sizeMax: 16 },
+        { id: 48, name: 'Scan Bars', icon: 'fa-bars', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: 'Bars', size: 'Width', sizeMax: 24 },
         { id: 49, name: 'Prism', icon: 'fa-gem', colors: ['#ff00dc', '#00ffff', '#82ff00'], speed: 'Speed', intensity: 'Spread', size: null },
-        { id: 50, name: 'Spin', icon: 'fa-circle-notch', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: null, size: 'Width', sizeMax: 24 },
+        { id: 50, name: 'Spin', icon: 'fa-circle-notch', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: null, size: 'Width', sizeMax: 32 },
         { id: 51, name: 'Twist', icon: 'fa-dna', colors: ['#7800ff', '#00ff64', '#ffdc00'], speed: 'Speed', intensity: 'Density', size: null },
-        { id: 52, name: 'Chase', icon: 'fa-forward', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: 'Accent sparks', size: 'Tail', sizeMax: 32 },
-        { id: 53, name: 'Fire', icon: 'fa-fire', colors: ['#000000', '#ff4800', '#ffe678'], speed: 'Speed', intensity: 'Flame scale', size: null }
+        { id: 52, name: 'Chase', icon: 'fa-forward', colors: ['#ff6000', '#00b4ff', '#ffffff'], speed: 'Speed', intensity: 'Sparks', size: 'Tail', sizeMax: 32 },
+        { id: 53, name: 'Fire Classic', icon: 'fa-fire', colors: ['#000000', '#ff4800', '#ffe678'], speed: 'Speed', intensity: 'Heat', size: null }
     ];
     this.effectAliases = {
         solid: 1,
@@ -68,7 +68,7 @@ function IgnisLibrary(ignis)
         flow: 11,
         gravcenter: 12,
         gravfreq: 13,
-        chase: 14,
+        chase: 52,
         chase2: 14,
         chase3: 15,
         chunchun: 16,
@@ -154,7 +154,7 @@ function IgnisLibrary(ignis)
         hash: 'effect:1',
         id: 1,
         name: 'Solid',
-        speed: 500,
+        speed: 128,
         intensity: 128,
         size: 3,
         paletteId: 0,
@@ -778,7 +778,7 @@ IgnisLibrary.prototype.normalizeEffectDraft = function (draft)
         hash: 'effect:' + effect.id,
         id: effect.id,
         name: effect.name,
-        speed: this.clampEffectNumber((draft && draft.speed !== undefined) ? draft.speed : 100, 10, 1000),
+        speed: this.clampEffectSpeedNumber((draft && draft.speed !== undefined) ? draft.speed : 128),
         intensity: this.clampEffectNumber((draft && draft.intensity !== undefined) ? draft.intensity : 128, 0, 255),
         size: this.clampEffectNumber((draft && draft.size !== undefined) ? draft.size : 3, 1, effect.sizeMax || 40),
         paletteId: palette.id,
@@ -792,6 +792,16 @@ IgnisLibrary.prototype.clampEffectNumber = function (value, min, max)
     if (isNaN(value)) value = min;
     if (value < min) value = min;
     if (value > max) value = max;
+    return value;
+}
+
+IgnisLibrary.prototype.clampEffectSpeedNumber = function (value)
+{
+    value = parseInt(value);
+    if (isNaN(value)) value = 128;
+    if (value > 255) value = Math.round(value * 255 / 1000);
+    if (value < 0) value = 0;
+    if (value > 255) value = 255;
     return value;
 }
 
@@ -809,7 +819,7 @@ IgnisLibrary.prototype.getDefaultEffectDraft = function (effect)
         id: effect.id,
         hash: 'effect:' + effect.id,
         name: effect.name,
-        speed: 500,
+        speed: 128,
         intensity: 128,
         size: effect.size ? Math.min(effect.sizeMax || 40, Math.max(1, effect.id == 18 ? 10 : 3)) : 3,
         paletteId: palette.id,
@@ -1283,6 +1293,25 @@ IgnisLibrary.prototype.genTexs = function (callback)
         app_execute_event('textures_generated');
         if (callback) callback(err, data);
     }
+}
+
+IgnisLibrary.prototype.genTexForImage = function (image, callback)
+{
+    if (!image || !image.path || !fs.existsSync(image.path)) {
+        if (callback) callback(new Error('Image file not found.'));
+        return;
+    }
+
+    var texh = (this.ignis.project.leds ? this.ignis.project.leds : config.project.default_leds);
+    var tpath = ignis_texdir() + path.sep + image.hash + '_' + texh + '.jpg';
+    this.ignis.resizer.texBatch([{ from: image.path, to: tpath }], texh, config.rendering.texture_quality, $.proxy(function (err, data) {
+        if (!err) {
+            image.tex = true;
+            this.save();
+        }
+        app_execute_event('textures_generated');
+        if (callback) callback(err, data);
+    }, this));
 }
 
 IgnisLibrary.prototype.thumbExist = function (hash)
@@ -1926,8 +1955,6 @@ IgnisLibrary.prototype.transformImageInPlace = function (source, transform, call
         source.tex = false;
         this.removeTexFiles(source.hash);
         this.save();
-        this.genTexs();
-        this.update();
 
         var thumbUrl = thumb_path.split(path.sep).join('/') + '?t=' + Date.now();
         $('.library-img[hash=' + source.hash + ']')
@@ -1948,10 +1975,11 @@ IgnisLibrary.prototype.transformImageInPlace = function (source, transform, call
                 }
             }
         }
-        this.ignis.timeline.updateInactiveTimelines();
-        this.ignis.preview.nodeChanged();
-
-        if (callback) callback(source);
+        this.genTexForImage(source, $.proxy(function () {
+            this.ignis.timeline.updateInactiveTimelines();
+            this.ignis.preview.nodeChanged();
+            if (callback) callback(source);
+        }, this));
     }, this);
 
     img.onerror = function () {
@@ -2027,7 +2055,6 @@ IgnisLibrary.prototype.transformImage = function (source, transform, callback)
             this.save();
         }
 
-        this.genTexs();
         this.update();
         if (item && item.generated) {
             $('.library-img[hash=' + hash + ']').remove();
@@ -2036,7 +2063,13 @@ IgnisLibrary.prototype.transformImage = function (source, transform, callback)
                 .removeClass('loading')
                 .css('background-image', 'url(' + thumb_path.split(path.sep).join('/') + '?t=' + Date.now() + ')');
         }
-        if (callback) callback(item);
+        if (!item) {
+            if (callback) callback(item);
+            return;
+        }
+        this.genTexForImage(item, $.proxy(function () {
+            if (callback) callback(item);
+        }, this));
     }, this);
 
     img.onerror = function () {

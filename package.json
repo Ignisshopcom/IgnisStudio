@@ -18,8 +18,8 @@
   },
   "keywords": [],
   "author": {
-    "name": "Dark York s.r.o.",
-    "email": "info@darkyork.com"
+    "name": "Ignisshop.com",
+    "email": "info@ignisshop.com"
   },
   "license": "private",
   "dependencies": {
@@ -40,7 +40,7 @@
     "electron-builder": "latest"
   },
   "build": {
-    "appId": "com.darkyork.ignisstudio",
+    "appId": "com.ignisshop.ignisstudio",
     "productName": "Ignis Studio",
     "asar": false,
     "afterPack": "scripts/after-pack-win-icon.js",

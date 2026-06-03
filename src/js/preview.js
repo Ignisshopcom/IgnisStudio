@@ -131,7 +131,7 @@ IgnisPreview.prototype.init = function () {
     this.initialized = true;
     console.log("IgnisPreview initialized");
 
-    setInterval($.proxy(function () { this.recalculate(); }, this), 100);
+    setInterval($.proxy(function () { this.recalculate(); }, this), 250);
 
     $('.preview-mode-button').on('click', $.proxy(this.switchMode, this));
     $('.preview-layout-button').on('click', $.proxy(this.switchLayout, this));
@@ -140,7 +140,7 @@ IgnisPreview.prototype.init = function () {
     $(document).on('mouseup', $.proxy(this.mouseUp, this));
     $('#preview-overlay').on('mousemove', $.proxy(this.mouseMove, this));
 
-    setInterval($.proxy(this.updatePreviewIndexes, this), 100);
+    setInterval($.proxy(this.updatePreviewIndexes, this), 500);
 
     this.updateMultiPreview();
 
@@ -391,8 +391,9 @@ IgnisPreview.prototype.setTextureIdx = function (i, path, node, ratio) {
     var smoothEffect = node && (node.type == 'effect' || node.effectId !== undefined || node.isEffect);
     texture.minFilter = smoothEffect ? THREE.LinearFilter : THREE.NearestFilter;
     texture.magFilter = smoothEffect ? THREE.LinearFilter : THREE.NearestFilter;
-    texture.wrapS = THREE.RepeatWrapping; //ClampToEdgeWrapping;//RepeatWrapping;
+    texture.wrapS = smoothEffect ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
     texture.wrapT = THREE.ClampToEdgeWrapping;
+    if (smoothEffect) texture.generateMipmaps = false;
 
     this.uniforms_list[i].texture = { type: "t", value: texture };
 }
@@ -713,8 +714,9 @@ IgnisPreview.prototype.setMultiTexture = function (hash, current_node) {
     var smoothEffect = current_node && (current_node.type == 'effect' || current_node.effectId !== undefined || current_node.isEffect);
     texture.minFilter = smoothEffect ? THREE.LinearFilter : THREE.NearestFilter;
     texture.magFilter = smoothEffect ? THREE.LinearFilter : THREE.NearestFilter;
-    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapS = smoothEffect ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
     texture.wrapT = THREE.ClampToEdgeWrapping;
+    if (smoothEffect) texture.generateMipmaps = false;
 
     this.multi_uniforms[hash].texture = { type: "t", value: texture };
 
@@ -809,7 +811,7 @@ IgnisPreview.prototype.animate = function (timestamp) {
     // render
     if (this.renderer) {
         this.renderer.render(this.scene, this.camera);
-        this.stats.update();
+        if (this.stats && this.stats.dom && this.stats.dom.parentNode) this.stats.update();
     }
 }
 

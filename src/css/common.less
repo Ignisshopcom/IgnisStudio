@@ -5,7 +5,7 @@ html, body {
 
 
 body {
-    background-color: #222;
+    background-color: @bg0;
     font-family: Arial, Helvetica, sans-serif;
     font-size: 13px;
     color: #eee;
@@ -204,19 +204,22 @@ ul {
     .file-record {
         height: 24px;
         line-height: 24px;
-        background-color: #111;
+        background-color: @bg1;
+        border-bottom: 1px solid rgba(255,255,255,0.03);
         position: relative;
+        transition: background-color .12s ease, color .12s ease;
 
         &:nth-child(even) {
-            background-color: #000;
+            background-color: #121419;
         }
 
         &:hover {
-            background-color: #333;
+            background-color: @bg2;
         }
 
         &.selected {
             background-color: #f26722;
+            color: #111;
         }
 
         .file-name {

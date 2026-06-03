@@ -13,7 +13,7 @@ if (typeof app.disableDomainBlockingFor3DAPIs === 'function') {
   app.disableDomainBlockingFor3DAPIs();
 }
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
-app.setAppUserModelId('com.darkyork.ignisstudio');
+app.setAppUserModelId('com.ignisshop.ignisstudio');
 app.setName('Ignis Studio');
 
 let mainWindow = null;
