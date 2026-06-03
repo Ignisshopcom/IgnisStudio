@@ -29,12 +29,12 @@ jobs:
         run: npm run check:main
 
       - name: Build macOS DMG
-        run: npm run installer:mac
+        run: npm run installer:mac:arm64
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: Ignis-Studio-macOS-DMG
+          name: Ignis-Studio-macOS-Apple-Silicon-DMG
           path: out/installer/*.dmg
           if-no-files-found: error
 

@@ -4,6 +4,10 @@ const { execFileSync } = require('child_process');
 
 module.exports = async function afterPackWinIcon(context) {
   if (context.electronPlatformName === 'darwin') {
+    if (context.appOutDir.includes('-temp')) {
+      return;
+    }
+
     const appName = `${context.packager.appInfo.productFilename}.app`;
     const appPath = path.join(context.appOutDir, appName);
 

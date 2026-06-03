@@ -12,6 +12,7 @@
     "make:mac": "electron-forge make --platform=darwin --arch=universal",
     "installer:win": "electron-builder --win nsis --x64",
     "installer:mac": "electron-builder --mac dmg --universal",
+    "installer:mac:arm64": "electron-builder --mac dmg --arm64",
     "publish": "electron-forge publish",
     "check:main": "node --check src/index.js",
     "lint": "echo \"No linting configured\""
