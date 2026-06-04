@@ -59,6 +59,7 @@ function IgnisTimeline(ignis)
     this.gmr = null;
     this.gmr_data = {};
     this.mirror_generation = {};
+    this.texture_generation = {};
     this.left = 40;
     this.vscroll = 0;
     this.ovs = 0;
@@ -155,7 +156,7 @@ IgnisTimeline.prototype.imagesWrapperDown = function (e)
 IgnisTimeline.prototype.imagesWrapperUp = function (e)
 {
     if (e.target != document.getElementById('timeline-images-wrapper')) return;
-    if (e.ctrlKey) return;
+    if (app_command_modifier(e)) return;
     if (Date.now() - this.wrapper_time < 250) this.deselect();
 }
 
@@ -319,9 +320,32 @@ IgnisTimeline.prototype.updateNodeElementImage = function (element, node, leds)
         element.css('background-image', 'url(img/icon.png)');
     } else {
         element.css('background-image', 'url(' + displayPath + '?t=' + Date.now() + ')');
+        this.ensureImageTexture(node, leds);
     }
 
     return displayPath != 'img/icon.png';
+}
+
+IgnisTimeline.prototype.ensureImageTexture = function (node, leds)
+{
+    if (!node || node.type == 'effect' || !node.hash) return;
+    if (this.textureExists(node.hash, leds)) return;
+
+    var key = node.hash + '_' + leds;
+    if (this.texture_generation[key]) return;
+
+    var image = this.ignis.library.getImageByHash(node.hash);
+    if (!image) return;
+
+    this.texture_generation[key] = true;
+    this.ignis.library.genTexForImage(image, $.proxy(function () {
+        delete this.texture_generation[key];
+        node.tex_loaded = true;
+        this.prev_hash = 'FORCE_REFRESH';
+        this.prev_hashes = [];
+        this.onProjectUpdated();
+        if (this.ignis.preview) this.ignis.preview.nodeChanged();
+    }, this));
 }
 
 IgnisTimeline.prototype.setPosition = function (i)
@@ -587,14 +611,16 @@ IgnisTimeline.prototype.moveTimelineDown = function (hash)
 
 IgnisTimeline.prototype.onKeyDown = function (e)
 {
-    if (e.originalEvent.ctrlKey) {
+    if (app_command_modifier(e)) {
         if (e.keyCode == 67) {
             // copy
             this.clipboardCopy();
+            e.preventDefault();
         }
         if (e.keyCode == 86) {
             // paste
             this.clipboardPaste(e.shiftKey);
+            e.preventDefault();
         }
     }
     if (e.keyCode == 33) {
@@ -709,7 +735,7 @@ IgnisTimeline.prototype.onMouseDown = function (e)
 {
     this.ignis.properties.deselect();
     if (e.button == 0 && this.isTimescaleHit(e)) {
-        if (!e.ctrlKey) this.clearSelectionVisuals();
+        if (!app_command_modifier(e)) this.clearSelectionVisuals();
         this.onCursorMouseDown(e);
         return;
     }
@@ -738,7 +764,7 @@ IgnisTimeline.prototype.onMouseDown = function (e)
         this.mx = (e.pageX - this.left);
         this.my = e.pageY;
         this.hover_mode = 'selection_box';
-        this.selection_additive = e.ctrlKey;
+        this.selection_additive = app_command_modifier(e);
         this.selection_start = this.getSelectionPoint(e);
         this.selection_current = this.selection_start;
         if (!this.selection_additive) {
@@ -1692,7 +1718,7 @@ IgnisTimeline.prototype.onImageClick = function (e)
     var uid = parseInt($(e.target).attr('uid'));
     var timelineHash = this.ignis.project.currentTimeline;
 
-    if (e.ctrlKey) {
+    if (app_command_modifier(e)) {
         this.selectNodeRef(timelineHash, uid, true);
     } else {
         this.selectNodeRef(timelineHash, uid, false);
@@ -2374,7 +2400,7 @@ IgnisTimeline.prototype.onInactiveImageClick = function (e)
     var el = $(e.currentTarget);
     var timelineHash = el.attr('timeline-hash');
     var uid = parseInt(el.attr('uid'));
-    var additive = e.ctrlKey;
+    var additive = app_command_modifier(e);
 
     this.selectNodeRef(timelineHash, uid, additive);
 }
@@ -2812,7 +2838,8 @@ IgnisTimeline.prototype.selectAllImages = function() {
 }
 
 IgnisTimeline.prototype.onGlobalKeyDown = function(e) {
-    if (e.ctrlKey && e.key === 'a') { // Změna podmínky na CTRL + A
+    if (app_command_modifier(e) && String(e.key || '').toLowerCase() === 'a') {
+        if ($('#library-images').is(':visible') && $('#library-images .library-img').length > 0) return;
         e.preventDefault();
         this.selectAllImages();
     }

@@ -976,7 +976,7 @@ IgnisProperties.prototype.onKeyDown = function (e)
 
 IgnisProperties.prototype.onKey = function (e)
 {
-    if (e.ctrlKey && e.keyCode == 6) {
+    if (app_command_modifier(e) && e.keyCode == 6) {
         e.preventDefault();
         $('#fit-image-count').val('1');
         this.stretchImage();

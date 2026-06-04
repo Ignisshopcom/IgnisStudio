@@ -27,6 +27,20 @@ function dialog_save(arg)
     return electronApi.dialogSave(arg);
 }
 
+function app_command_modifier(e)
+{
+    var ev = e && e.originalEvent ? e.originalEvent : e;
+    return !!(ev && (ev.ctrlKey || ev.metaKey));
+}
+
+function app_editing_text(e)
+{
+    var target = e && e.target ? e.target : null;
+    if (!target) return false;
+    var tag = (target.tagName || '').toLowerCase();
+    return tag == 'input' || tag == 'textarea' || tag == 'select' || target.isContentEditable;
+}
+
 function app_init_late()
 {
     ignis_init_late();
