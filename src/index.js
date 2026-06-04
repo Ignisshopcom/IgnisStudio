@@ -17,6 +17,7 @@ app.setAppUserModelId('com.ignisshop.ignisstudio');
 app.setName('Ignis Studio');
 
 let mainWindow = null;
+let helpWindow = null;
 let pendingProjectFile = getProjectPathFromArgs(process.argv);
 
 function getProjectPathFromArgs(args) {
@@ -46,6 +47,44 @@ if (!gotSingleInstanceLock) {
   app.quit();
 }
 
+function openHelpWindow() {
+  if (helpWindow && !helpWindow.isDestroyed()) {
+    helpWindow.focus();
+    return;
+  }
+
+  helpWindow = new BrowserWindow({
+    width: 920,
+    height: 720,
+    minWidth: 720,
+    minHeight: 540,
+    title: 'Ignis Studio Help',
+    parent: mainWindow || undefined,
+    modal: false,
+    show: false,
+    icon: APP_ICON_IMAGE.isEmpty() ? APP_ICON : APP_ICON_IMAGE,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      devTools: false,
+    },
+  });
+
+  if (!APP_ICON_IMAGE.isEmpty()) {
+    helpWindow.setIcon(APP_ICON_IMAGE);
+  }
+
+  helpWindow.loadURL(HELP_URL);
+  helpWindow.once('ready-to-show', () => {
+    if (helpWindow && !helpWindow.isDestroyed()) helpWindow.show();
+  });
+  helpWindow.on('closed', () => {
+    helpWindow = null;
+  });
+}
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -114,6 +153,10 @@ app.whenReady().then(() => {
 
     contents.on('will-navigate', (navEvent, url) => {
       var parsed = new URL(url);
+      var isHelpWindow = helpWindow && !helpWindow.isDestroyed() && contents === helpWindow.webContents;
+      if (isHelpWindow && url.indexOf(HELP_URL) === 0) {
+        return;
+      }
       if (parsed.protocol !== 'file:') {
         navEvent.preventDefault();
         shell.openExternal(url);
@@ -160,7 +203,7 @@ ipcMain.on('get-pending-project-file', (event) => {
 });
 
 ipcMain.on('help', () => {
-  shell.openExternal(HELP_URL);
+  openHelpWindow();
 });
 
 ipcMain.on('dialog-open', (event, arg) => {

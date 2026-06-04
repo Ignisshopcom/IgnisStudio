@@ -1572,18 +1572,27 @@ IgnisLibrary.prototype.renderEffectEditor = function ()
 IgnisLibrary.prototype.getStaticEffectPreviewDataUrl = function (effect, draft)
 {
     effect = this.getEffectById(effect && effect.id);
-    var cacheKey = 'effect-gallery-fixed-30-' + effect.id;
+    var cacheKey = 'effect-gallery-fixed-led30-control30-' + effect.id;
     if (this.effectGalleryPreviewCache[cacheKey]) return this.effectGalleryPreviewCache[cacheKey];
 
     var previewImage = this.effectGalleryPreviewDataUrl(effect);
     if (this.ignis.project && this.ignis.project.effectPreviewDataUrl) {
-        previewImage = this.ignis.project.effectPreviewDataUrl(draft || this.getDefaultEffectDraft(effect), 100, 100, {
+        previewImage = this.ignis.project.effectPreviewDataUrl(this.getGalleryEffectPreviewDraft(effect, draft), 100, 100, {
             leds: 30,
             previewScale: 4
         });
     }
     this.effectGalleryPreviewCache[cacheKey] = previewImage;
     return previewImage;
+}
+
+IgnisLibrary.prototype.getGalleryEffectPreviewDraft = function (effect, draft)
+{
+    effect = this.getEffectById(effect && effect.id);
+    var previewDraft = $.extend(true, {}, draft || this.getDefaultEffectDraft(effect));
+    previewDraft.speed = 30;
+    previewDraft.intensity = 30;
+    return previewDraft;
 }
 
 IgnisLibrary.prototype.createEffectRange = function (label, key, value, min, max)
