@@ -1188,16 +1188,17 @@ IgnisProperties.prototype.renderEffectProperties = function (node)
     var library = this.ignis.library;
     var effect = library.getEffectById(node.effectId);
     var slots = library.getEffectColorSlots(effect.id);
+    var sizeMax = library.getEffectSizeMax(effect);
     node.effectSpeed = library.clampEffectSpeedNumber(node.effectSpeed);
     node.effectIntensity = library.clampEffectNumber(node.effectIntensity, 0, 255);
-    node.effectSize = library.clampEffectNumber(node.effectSize, 1, effect.sizeMax || 40);
+    node.effectSize = library.clampEffectNumber(node.effectSize, 1, sizeMax);
     node.effectColors = (node.effectColors && node.effectColors.length ? node.effectColors : effect.colors || ['#ff6000', '#00b4ff', '#ffffff']).slice(0);
 
     box.append($('<label class="effect-property-name"></label>').html('<i class="fas fa-magic"></i> ' + effect.name));
 
     if (effect.speed) box.append(this.createEffectPropertyRange(effect.speed, 'effectSpeed', node.effectSpeed, 0, 255, uid));
     if (effect.intensity) box.append(this.createEffectPropertyRange(effect.intensity, 'effectIntensity', node.effectIntensity, 0, 255, uid));
-    if (effect.size) box.append(this.createEffectPropertyRange(effect.size, 'effectSize', node.effectSize, 1, effect.sizeMax || 40, uid));
+    if (effect.size) box.append(this.createEffectPropertyRange(effect.size, 'effectSize', node.effectSize, 1, sizeMax, uid));
 
     if (slots > 0) {
         var colors = $('<div class="effect-property-colors"></div>');

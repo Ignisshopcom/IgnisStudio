@@ -867,9 +867,9 @@ IgnisProject.prototype.addNode = function (hash, fpath, start, duration, activat
             hash: 'effect:' + fx.id,
             effectId: fx.id,
             effectName: fx.name,
-            effectSpeed: this.ignis.library.clampEffectSpeedNumber(draft.speed || 128),
+            effectSpeed: this.ignis.library.clampEffectSpeedNumber((draft.speed !== undefined && draft.speed !== null) ? draft.speed : 128),
             effectIntensity: (draft.intensity !== undefined && draft.intensity !== null) ? draft.intensity : 128,
-            effectSize: draft.size || 3,
+            effectSize: (draft.size !== undefined && draft.size !== null) ? draft.size : 3,
             effectPaletteId: (draft.paletteId !== undefined && draft.paletteId !== null) ? draft.paletteId : 0,
             effectColors: (draft.colors || fx.colors || ['#ff6000', '#00b4ff', '#ffffff']).slice(0),
             sep: 80,
@@ -2072,11 +2072,11 @@ IgnisProject.prototype.effectLakeColor = function (node, pos, colors)
 IgnisProject.prototype.effectSignature = function (node, leds, maxColumns, previewScale, downsample)
 {
     var data = {
-        renderer: 7,
+        renderer: 8,
         id: node.effectId || node.id || node.hash,
-        speed: node.effectSpeed || node.speed,
-        intensity: node.effectIntensity || node.intensity,
-        size: node.effectSize || node.size,
+        speed: (node.effectSpeed !== undefined && node.effectSpeed !== null) ? node.effectSpeed : node.speed,
+        intensity: (node.effectIntensity !== undefined && node.effectIntensity !== null) ? node.effectIntensity : node.intensity,
+        size: (node.effectSize !== undefined && node.effectSize !== null) ? node.effectSize : node.size,
         palette: (node.effectPaletteId !== undefined && node.effectPaletteId !== null) ? node.effectPaletteId : node.paletteId,
         colors: node.effectColors || node.colors,
         duration: node.duration,
@@ -2099,11 +2099,11 @@ IgnisProject.prototype.effectSignature = function (node, leds, maxColumns, previ
 IgnisProject.prototype.effectTextureCacheKey = function (node, leds, maxColumns, previewScale, downsample)
 {
     return [
-        7,
+        8,
         node.effectId || node.id || node.hash,
-        node.effectSpeed || node.speed || 128,
-        node.effectIntensity || node.intensity || 128,
-        node.effectSize || node.size || 3,
+        (node.effectSpeed !== undefined && node.effectSpeed !== null) ? node.effectSpeed : ((node.speed !== undefined && node.speed !== null) ? node.speed : 128),
+        (node.effectIntensity !== undefined && node.effectIntensity !== null) ? node.effectIntensity : ((node.intensity !== undefined && node.intensity !== null) ? node.intensity : 128),
+        (node.effectSize !== undefined && node.effectSize !== null) ? node.effectSize : ((node.size !== undefined && node.size !== null) ? node.size : 3),
         (node.effectPaletteId !== undefined && node.effectPaletteId !== null) ? node.effectPaletteId : node.paletteId,
         (node.effectColors || node.colors || []).join(','),
         node.duration || 0,
@@ -2376,7 +2376,7 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
     if (previewScale > 1) {
         node = $.extend(true, {}, node);
         if (node.size !== undefined) node.size = Math.max(1, Math.round(parseInt(node.size || 1) * previewScale));
-        if (node.effectSize !== undefined) node.effectSize = Math.max(1, Math.round(parseInt(node.effectSize || 1) * previewScale));
+        if (node.effectSize !== undefined) node.effectSize = Math.max(1, Math.round(parseInt((node.effectSize !== null) ? node.effectSize : 1) * previewScale));
         if (node.mgap !== undefined) node.mgap = Math.max(0, Math.round(parseInt(node.mgap || 0) * previewScale));
     }
     var outputCols = options.columns ? parseInt(options.columns) : fullCols;
@@ -2389,9 +2389,14 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
     var image = { width: cols, height: leds, data: new Uint8ClampedArray(cols * leds * 4) };
     var effectId = this.ignis.library.normalizeEffectId(node.effectId || node.id || node.hash);
     var colors = ((node.effectColors && node.effectColors.length) ? node.effectColors : (node.colors && node.colors.length ? node.colors : ['#ff6000', '#00b4ff', '#ffffff'])).map(this.effectColorToRgb);
-    var speed = this.ignis.library.clampEffectSpeedNumber(node.effectSpeed || node.speed || 128);
-    var inten = Math.max(0, Math.min(parseInt(node.effectIntensity || node.intensity || 128), 255));
-    var size = Math.max(1, Math.min(parseInt(node.effectSize || node.size || 3), leds));
+    function effectValue(primary, fallback, def) {
+        if (primary !== undefined && primary !== null) return primary;
+        if (fallback !== undefined && fallback !== null) return fallback;
+        return def;
+    }
+    var speed = this.ignis.library.clampEffectSpeedNumber(effectValue(node.effectSpeed, node.speed, 128));
+    var inten = Math.max(0, Math.min(parseInt(effectValue(node.effectIntensity, node.intensity, 128)), 255));
+    var size = Math.max(1, Math.min(parseInt(effectValue(node.effectSize, node.size, 3)), leds));
     if (node.effectPaletteId === undefined && node.paletteId !== undefined) node.effectPaletteId = node.paletteId;
     var phase = 0;
     var rng = 0x1234abcd ^ ((leds << 16) >>> 0);
@@ -2529,6 +2534,19 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
     function palette(pos) { return that.effectPaletteAt(node, pos, colors); }
     function lake(pos) { return that.effectLakeColor(node, pos, colors); }
     function scaledSpeed() { return Math.floor((speed * 1000 + 127) / 255); }
+    function motionSpeed() { return scaledSpeed() * 5; }
+    function loopedPosition(spanQ8, cycles) {
+        spanQ8 = Math.max(1, spanQ8);
+        cycles = Math.max(0, Math.round(cycles || 0));
+        if (cycles <= 0) return 0;
+        return (x * cycles * spanQ8 / Math.max(1, cols)) % spanQ8;
+    }
+    function loopedPhase(span, cycles) {
+        span = Math.max(1, span);
+        cycles = Math.max(0, Math.round(cycles || 0));
+        if (cycles <= 0) return 0;
+        return (x * cycles * span / Math.max(1, cols)) % span;
+    }
     function speedDivisor() {
         switch (effectId) {
             case 14:
@@ -2569,7 +2587,7 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                 return 26;
         }
     }
-    function speedStep() { return 1 + Math.floor(scaledSpeed() / speedDivisor()); }
+    function speedStep() { return speed <= 0 ? 0 : 1 + Math.floor(motionSpeed() / speedDivisor()); }
     function renderAndroidCall() {
         var maxWidth = Math.max(1, Math.min(size, leds));
         var fg = colors[0] || palette(0);
@@ -2622,8 +2640,8 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                 }
                 var width = Math.max(2, Math.min(size, leds));
                 var spanQ8 = Math.max(1, leds * 256);
-                var travelQ8 = spanQ8 + width * 512;
-                var posQ8 = ((frame * Math.max(60, scaledSpeed() * 2)) % travelQ8) - width * 256;
+                var cycles = speed <= 0 ? 0 : Math.max(1, Math.round(1 + speed / 42));
+                var posQ8 = loopedPosition(spanQ8, cycles);
                 drawSoftSegment(posQ8, width, fg, 255);
                 break;
             }
@@ -2697,11 +2715,15 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
             }
             case 17:
                 clear();
+                var depth = inten / 255;
+                var waveScaleA = 3 + depth * 18;
+                var waveScaleB = 7 + depth * 30;
+                var waveMix = 0.18 + depth * 1.82;
                 for (var i = 0; i < leds; i++) {
-                    var a = wave8(i * 8 + (phase >> 1));
-                    var b = wave8(i * 17 - (phase >> 2));
-                    var v = (a + b) / 2;
-                    setPixel(i, lake(v), 50 + v * 205 / 255);
+                    var a = wave8(i * waveScaleA + (phase >> 1));
+                    var b = wave8(i * waveScaleB - (phase >> 2));
+                    var v = Math.max(0, Math.min(255, 128 + (((a + b) / 2) - 128) * waveMix));
+                    setPixel(i, lake(v), 35 + depth * 40 + v * (180 + depth * 40) / 255);
                 }
                 break;
             case 18: {
@@ -2744,14 +2766,19 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
                     if (diff > size) continue;
                     addPixel(i, c, (size - diff + 1) * 255 / (size + 1));
                 }
-                rippleRadius += 1 + (scaledSpeed() > 650 ? 1 : 0);
+                if (speed > 0) rippleRadius += 1 + (scaledSpeed() > 650 ? 1 : 0);
                 break;
             }
             case 22:
                 clear();
+                var runDensity = inten / 255;
+                var runFrequency = 2 + runDensity * 58;
+                var runThreshold = 190 - runDensity * 150;
+                var runRange = Math.max(1, 255 - runThreshold);
+                var runColorStep = 4 + runDensity * 34;
                 for (var i = 0; i < leds; i++) {
-                    var v = wave8(i * (8 + inten / 28) + phase);
-                    setPixel(i, palette(phase + i * 8), v < 80 ? 0 : (v - 80) * 255 / 175);
+                    var v = wave8(i * runFrequency + phase);
+                    setPixel(i, palette(phase + i * runColorStep), v < runThreshold ? 0 : (v - runThreshold) * 255 / runRange);
                 }
                 break;
             case 23: {
@@ -2775,8 +2802,11 @@ IgnisProject.prototype.generateEffectImageData = function (node, options)
             }
             case 25:
                 clear();
-                var spread = 4 + inten / 8;
-                for (var i = 0; i < leds; i++) setPixel(i, that.effectBuiltinPalette(1, i * spread + (phase >> 1)), 255);
+                var rainbowPhase = loopedPhase(256, speed <= 0 ? 0 : Math.max(1, Math.round(speed / 64)));
+                var rainbowCycles = 1 + Math.round(inten * 9 / 255);
+                for (var i = 0; i < leds; i++) {
+                    setPixel(i, that.effectBuiltinPalette(1, i * 256 * rainbowCycles / Math.max(1, leds) + rainbowPhase), 255);
+                }
                 break;
             case 26: {
                 clear();

@@ -780,10 +780,16 @@ IgnisLibrary.prototype.normalizeEffectDraft = function (draft)
         name: effect.name,
         speed: this.clampEffectSpeedNumber((draft && draft.speed !== undefined) ? draft.speed : 128),
         intensity: this.clampEffectNumber((draft && draft.intensity !== undefined) ? draft.intensity : 128, 0, 255),
-        size: this.clampEffectNumber((draft && draft.size !== undefined) ? draft.size : 3, 1, effect.sizeMax || 40),
+        size: this.clampEffectNumber((draft && draft.size !== undefined) ? draft.size : 3, 1, this.getEffectSizeMax(effect)),
         paletteId: palette.id,
         colors: colors
     };
+}
+
+IgnisLibrary.prototype.getEffectSizeMax = function (effect)
+{
+    effect = this.getEffectById(effect && effect.id);
+    return Math.max(1, (effect.sizeMax || 40) * 5);
 }
 
 IgnisLibrary.prototype.clampEffectNumber = function (value, min, max)
@@ -821,7 +827,7 @@ IgnisLibrary.prototype.getDefaultEffectDraft = function (effect)
         name: effect.name,
         speed: 128,
         intensity: 128,
-        size: effect.size ? Math.min(effect.sizeMax || 40, Math.max(1, effect.id == 18 ? 10 : 3)) : 3,
+        size: effect.size ? Math.min(this.getEffectSizeMax(effect), Math.max(1, effect.id == 18 ? 10 : 3)) : 3,
         paletteId: palette.id,
         colors: palette.colors.slice(0)
     });
