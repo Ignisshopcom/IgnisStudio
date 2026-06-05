@@ -18,10 +18,43 @@ IgnisResizer.prototype.init = function ()
 IgnisResizer.prototype.execFile = function (cmd, params, callback)
 {
     window.electronApi.execFile(cmd, params).then(function (result) {
+        if (result && result.error) {
+            console.error('Resizer command failed:', cmd, params, result.error, result.stderr || '');
+        }
         if (callback) {
             callback(result.error, result.stdout, result.stderr);
         }
     });
+}
+
+IgnisResizer.prototype.windowsResizerPath = function ()
+{
+    var candidates = [];
+    var vendorPath = ['vendor', 'win', 'resizer.exe'].join(path.sep);
+
+    if (window.electronApi.resourcesPath) {
+        candidates.push(window.electronApi.resourcesPath + path.sep + vendorPath);
+    }
+
+    if (window.electronApi.getAppPath) {
+        var appPath = window.electronApi.getAppPath();
+        candidates.push(appPath + path.sep + vendorPath);
+        candidates.push(appPath + path.sep + '..' + path.sep + '..' + path.sep + vendorPath);
+    }
+
+    candidates.push('resizer.exe');
+
+    for (var i in candidates) {
+        var candidate = candidates[i];
+        try {
+            if (candidate == 'resizer.exe' || fs.existsSync(candidate)) {
+                return candidate;
+            }
+        } catch (e) {
+        }
+    }
+
+    return 'resizer.exe';
 }
 
 IgnisResizer.prototype.thumb = function (from, to, max_size, callback)
@@ -45,7 +78,7 @@ IgnisResizer.prototype.thumbBatch = function (batch, max_size, callback)
         return this.thumbBatchMac(batch, max_size, callback);
     }
 
-    var cmd = "resizer.exe";
+    var cmd = this.windowsResizerPath();
     var params = ['thumb', max_size];
 
     var cfg_file = this.prepareBatchConfig(batch);
@@ -75,7 +108,7 @@ IgnisResizer.prototype.exportBatch = function (batch, max_size, callback)
         return this.exportBatchMac(batch, max_size, callback);
     }
 
-    var cmd = "resizer.exe";
+    var cmd = this.windowsResizerPath();
     var params = ['export', max_size];
 
     var cfg_file = this.prepareBatchConfig(batch);
@@ -92,7 +125,7 @@ IgnisResizer.prototype.texBatch = function (batch, leds, quality, callback)
 
     if (!quality) quality = config.rendering.texture_quality;
 
-    var cmd = "resizer.exe";
+    var cmd = this.windowsResizerPath();
     var params = ['tex', leds, quality];
 
     var cfg_file = this.prepareBatchConfig(batch);
@@ -217,7 +250,7 @@ IgnisResizer.prototype.resize = function (mode, from, to, width, height, callbac
         return this.resizeMac( mode, from, to, width, height, callback );
     }
 
-    var cmd = "resizer.exe";
+    var cmd = this.windowsResizerPath();
     var params = [mode, from, to, width, height];
 
     this.execFile(cmd, params, callback);

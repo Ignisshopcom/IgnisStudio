@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 const childProcess = require('child_process');
 const dgram = require('dgram');
 const fs = require('fs');
@@ -485,6 +485,16 @@ const api = {
   resourcesPath: process.resourcesPath,
   appDataPath: process.env.APPDATA || '',
   homeDir: os.homedir(),
+  getPathForFile(file) {
+    try {
+      if (webUtils && typeof webUtils.getPathForFile === 'function') {
+        return webUtils.getPathForFile(file);
+      }
+    } catch (error) {
+      return '';
+    }
+    return file && file.path ? file.path : '';
+  },
   md5(value) {
     return md5(value);
   },
@@ -519,7 +529,10 @@ const api = {
   },
   execFile(command, args) {
     return new Promise((resolve) => {
-      childProcess.execFile(command, args || [], (error, stdout, stderr) => {
+      childProcess.execFile(command, args || [], {
+        timeout: 120000,
+        windowsHide: true,
+      }, (error, stdout, stderr) => {
         resolve({
           error: error ? {
             message: error.message,

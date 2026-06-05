@@ -413,6 +413,10 @@ IgnisLibrary.prototype.imageUpdate = function ()
             }
             that.elCache[hash] = el;
             thmb.push(hash);
+        } else if (n.thumbError && fs.existsSync(n.path)) {
+            el.removeClass('loading');
+            el.addClass('loaded');
+            el.css('background-image', 'url(' + that.fileUrl(n.path) + '?t=' + (new Date()).getMilliseconds() + ')');
         }
     });
     for (var hash of thmb) {
@@ -576,6 +580,10 @@ IgnisLibrary.prototype.importFile = function (filePath, callback)
 
 IgnisLibrary.prototype.importFileList = function (filePaths)
 {
+    filePaths = (filePaths || []).filter(function (filePath) {
+        return !!filePath;
+    });
+
     var pending = filePaths.length;
     var added = false;
 
@@ -1259,10 +1267,22 @@ IgnisLibrary.prototype.genThumbs = function (callback)
     }
 
     if (batch.length > 0) {
-        this.ignis.resizer.thumbBatch(batch, config.rendering.thumbnail_quality, function (err, data) {
+        this.ignis.resizer.thumbBatch(batch, config.rendering.thumbnail_quality, $.proxy(function (err, data) {
+            if (err) {
+                console.error('Thumbnail generation failed:', err);
+                for (var i in batch) {
+                    for (var j in this.library.images) {
+                        if (this.library.images[j].path == batch[i].from) {
+                            this.library.images[j].thumbError = true;
+                        }
+                    }
+                }
+                this.save();
+                this.imageUpdate();
+            }
             app_execute_event('thumbs_generated');
             if (callback) callback(err, data);
-        });
+        }, this));
     } else {
         app_execute_event('thumbs_generated');
         if (callback) callback(null, null);
@@ -2170,7 +2190,11 @@ IgnisLibrary.prototype.drag = function ()
 
         var filePaths = [];
         for (let f of e.originalEvent.dataTransfer.files) {
-            filePaths.push(f.path);
+            var filePath = (f && f.path) ? f.path : '';
+            if (!filePath && window.electronApi.getPathForFile) {
+                filePath = window.electronApi.getPathForFile(f);
+            }
+            if (filePath) filePaths.push(filePath);
         }
 
         this.importFileList(filePaths);

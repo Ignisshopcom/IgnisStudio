@@ -53,6 +53,16 @@
       "package.json",
       "forge.config.js"
     ],
+    "extraResources": [
+      {
+        "from": "vendor/win/resizer.exe",
+        "to": "vendor/win/resizer.exe"
+      },
+      {
+        "from": "vendor/win/Magick.NET-Q16-AnyCPU.dll",
+        "to": "vendor/win/Magick.NET-Q16-AnyCPU.dll"
+      }
+    ],
     "win": {
       "icon": "src/img/icon.ico",
       "signAndEditExecutable": false,
@@ -67,7 +77,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "perMachine": false,
+      "perMachine": true,
+      "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
