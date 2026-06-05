@@ -80,7 +80,6 @@ IgnisProject.prototype.init = function ()
     //setInterval($.proxy(this.autoSave, this), 10000);
 
     $(document).on('keypress', $.proxy(this.keyPress, this));
-    $(document).on('keydown', $.proxy(this.keyDown, this));
 }
 
 IgnisProject.prototype.clampLineFrequency = function (value)
@@ -156,50 +155,6 @@ IgnisProject.prototype.keyPress = function (e)
             default:
                 break;
         }
-    }
-}
-
-IgnisProject.prototype.keyDown = function (e)
-{
-    if (!app_command_modifier(e) || app_editing_text(e)) return;
-
-    var key = String(e.key || '').toLowerCase();
-    var handled = true;
-
-    switch (key) {
-        case 's':
-            if (e.shiftKey) {
-                this.saveAs();
-            } else {
-                this.save();
-            }
-            break;
-        case 'o':
-            this.load();
-            break;
-        case 'n':
-            this.new();
-            break;
-        case 'i':
-            if (app_actions.library_import) app_actions.library_import();
-            break;
-        case 'e':
-            if ($('#properties-export-box').is(':hidden')) {
-                this.ignis.properties.switchExport();
-            } else if (e.shiftKey) {
-                this.exportAs();
-            } else {
-                this.export();
-            }
-            break;
-        default:
-            handled = false;
-            break;
-    }
-
-    if (handled) {
-        e.preventDefault();
-        e.stopPropagation();
     }
 }
 

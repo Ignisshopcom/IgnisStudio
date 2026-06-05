@@ -101,119 +101,26 @@ IgnisResizer.prototype.texBatch = function (batch, leds, quality, callback)
     this.execFile(cmd, params, callback);
 }
 
-IgnisResizer.prototype.fileUrl = function (filePath)
-{
-    var url = filePath.split(path.sep).join('/');
-    if (/^[a-zA-Z]:/.test(url)) url = '/' + url;
-    return 'file://' + encodeURI(url).replace(/#/g, '%23').replace(/\?/g, '%3F');
-}
-
-IgnisResizer.prototype.writeCanvasFile = function (canvas, to, callback)
-{
-    try {
-        var ext = path.extname(to).toLowerCase();
-        var mime = ext == '.png' ? 'image/png' : 'image/jpeg';
-        var quality = mime == 'image/jpeg' ? 0.92 : undefined;
-        var dataUrl = quality ? canvas.toDataURL(mime, quality) : canvas.toDataURL(mime);
-        var data = dataUrl.replace(/^data:image\/(png|jpeg);base64,/, '');
-        fs.writeFileSync(to, Buffer.from(data, 'base64'));
-        if (callback) callback(null, null);
-    } catch (err) {
-        console.error('Canvas resize write failed:', to, err);
-        if (callback) callback(err);
-    }
-}
-
-IgnisResizer.prototype.loadCanvasImage = function (from, callback)
-{
-    var done = false;
-    var img = new Image();
-    var finish = function (err) {
-        if (done) return;
-        done = true;
-        callback(err, img);
-    };
-
-    var timer = setTimeout(function () {
-        finish(new Error('Image load timed out: ' + from));
-    }, 30000);
-
-    img.onload = function () {
-        clearTimeout(timer);
-        finish(null);
-    };
-    img.onerror = function () {
-        clearTimeout(timer);
-        finish(new Error('Image load failed: ' + from));
-    };
-    img.src = this.fileUrl(from);
-}
-
-IgnisResizer.prototype.drawCanvasImage = function (img, width, height, options)
-{
-    options = options || {};
-    width = Math.max(1, Math.round(width));
-    height = Math.max(1, Math.round(height));
-
-    var canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    var ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, width, height);
-    ctx.imageSmoothingEnabled = options.smoothing !== false;
-    if (ctx.imageSmoothingQuality) ctx.imageSmoothingQuality = options.quality || 'high';
-
-    ctx.save();
-    if (options.rotate180) {
-        ctx.translate(width, height);
-        ctx.rotate(Math.PI);
-    } else if (options.flipH || options.flipV) {
-        ctx.translate(options.flipH ? width : 0, options.flipV ? height : 0);
-        ctx.scale(options.flipH ? -1 : 1, options.flipV ? -1 : 1);
-    }
-    ctx.drawImage(img, 0, 0, width, height);
-    ctx.restore();
-
-    return canvas;
-}
-
-IgnisResizer.prototype.processCanvasBatch = function (batch, worker, callback)
-{
-    var items = (batch || []).slice(0);
-    var firstError = null;
-
-    var next = $.proxy(function () {
-        if (items.length == 0) {
-            if (callback) callback(firstError, null);
-            return;
-        }
-
-        var item = items.shift();
-        worker.call(this, item, $.proxy(function (err) {
-            if (err && !firstError) firstError = err;
-            setTimeout(next, 0);
-        }, this));
-    }, this);
-
-    next();
-}
-
 IgnisResizer.prototype.thumbBatchMac = function (batch, max_size, callback)
 {
-    max_size = parseInt(max_size || 300);
-    if (isNaN(max_size) || max_size < 64) max_size = 300;
+    this.thumb_batch_callback = callback;
+    var cmd = config.magick_darwin;
 
-    this.processCanvasBatch(batch, function (item, done) {
-        this.loadCanvasImage(item.from, $.proxy(function (err, img) {
-            if (err) return done(err);
-            var ratio = Math.min(max_size / img.width, max_size / img.height, 1);
-            var width = Math.max(1, Math.round(img.width * ratio));
-            var height = Math.max(1, Math.round(img.height * ratio));
-            var canvas = this.drawCanvasImage(img, width, height, { smoothing: true, quality: 'high' });
-            this.writeCanvasFile(canvas, item.to, done);
+    for (let i in batch) {
+        var from = batch[i].from;
+        var to = batch[i].to;
+
+        var params = [
+            from,
+            '-resize', '300x300',
+            to
+        ];
+
+        this.thumb_batch_processes.push(i);
+        this.execFile(cmd, params, $.proxy(function () {
+            this.thumbBatchExit(i);
         }, this));
-    }, callback);
+    }
 }
 
 IgnisResizer.prototype.thumbBatchExit = function (process)
@@ -231,18 +138,24 @@ IgnisResizer.prototype.thumbBatchExit = function (process)
 
 IgnisResizer.prototype.exportBatchMac = function (batch, max_size, callback)
 {
-    max_size = parseInt(max_size || config.project.default_leds || 80);
-    if (isNaN(max_size) || max_size < 1) max_size = config.project.default_leds || 80;
+    this.export_batch_callback = callback;
+    var cmd = config.magick_darwin;
 
-    this.processCanvasBatch(batch, function (item, done) {
-        this.loadCanvasImage(item.from, $.proxy(function (err, img) {
-            if (err) return done(err);
-            var height = max_size;
-            var width = Math.max(1, Math.round(img.width * (height / img.height)));
-            var canvas = this.drawCanvasImage(img, width, height, { smoothing: true, quality: 'high' });
-            this.writeCanvasFile(canvas, item.to, done);
+    for (let i in batch) {
+        var from = batch[i].from;
+        var to = batch[i].to;
+
+        var params = [
+            from,
+            '-resize', 'x' + max_size,
+            to
+        ];
+
+        this.export_batch_processes.push(i);
+        this.execFile(cmd, params, $.proxy(function () {
+            this.thumbExportExit(i);
         }, this));
-    }, callback);
+    }
 }
 
 IgnisResizer.prototype.thumbExportExit = function (process)
@@ -260,16 +173,27 @@ IgnisResizer.prototype.thumbExportExit = function (process)
 
 IgnisResizer.prototype.texBatchMac = function (batch, leds, quality, callback)
 {
-    var size = parseInt(quality || config.rendering.texture_quality || 512);
-    if (isNaN(size) || size < 64) size = 512;
+    this.tex_batch_callback = callback;
+    var cmd = config.magick_darwin;
 
-    this.processCanvasBatch(batch, function (item, done) {
-        this.loadCanvasImage(item.from, $.proxy(function (err, img) {
-            if (err) return done(err);
-            var canvas = this.drawCanvasImage(img, size, size, { smoothing: false });
-            this.writeCanvasFile(canvas, item.to, done);
+    for (let i in batch) {
+        var from = batch[i].from;
+        var to = batch[i].to;
+
+        var params = [
+            from,
+            '-resize', 'x' + leds,
+            '-interpolate', 'Nearest',
+            '-filter', 'point',
+            '-resize', '512x512!',
+            to
+        ];
+
+        this.tex_batch_processes.push(i);
+        this.execFile(cmd, params, $.proxy(function () {
+            this.thumbTexExit(i);
         }, this));
-    }, callback);
+    }
 }
 
 IgnisResizer.prototype.thumbTexExit = function (process)
@@ -301,24 +225,7 @@ IgnisResizer.prototype.resize = function (mode, from, to, width, height, callbac
 
 IgnisResizer.prototype.resizeMac = function (mode, from, to, width, height, callback)
 {
-    width = parseInt(width);
-    height = parseInt(height);
-    if (isNaN(width) || width < 1) width = 1;
-    if (isNaN(height) || height < 1) height = 1;
 
-    this.loadCanvasImage(from, $.proxy(function (err, img) {
-        if (err) {
-            if (callback) callback(err);
-            return;
-        }
-
-        var canvas = this.drawCanvasImage(img, width, height, {
-            smoothing: mode != 'point',
-            rotate180: mode == 'rotate',
-            flipH: mode == 'flip'
-        });
-        this.writeCanvasFile(canvas, to, callback);
-    }, this));
 }
 
 IgnisResizer.prototype.stickMirrorGap = function (hash, leds, gap, rotate, reverse, callback)

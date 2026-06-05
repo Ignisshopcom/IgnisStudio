@@ -429,15 +429,86 @@
             }
             &.center {
                 left: 50%;
-                margin-left: -16.65%;
-                width: 33.3%;
+                margin-left: -24%;
+                width: 48%;
                 text-align: center;
             }
             &.right {
                 right: 0;
-                width: 33.3%;
+                display: flex;
+                align-items: center;
+                justify-content: flex-end;
+                gap: 12px;
+                width: 45%;
                 text-align: right;
                 padding-right: 8px;
+            }
+        }
+        #cursor-time {
+            flex: 0 0 auto;
+            min-width: 118px;
+            text-align: right;
+        }
+        #timeline-test-controls {
+            display: inline-flex;
+            flex: 0 0 auto;
+            align-items: center;
+            height: 30px;
+            margin-right: 0;
+            vertical-align: top;
+            background: #17100f;
+            border: 1px solid #7f1717;
+            border-radius: 6px;
+            overflow: hidden;
+            color: #eee;
+
+            &.busy {
+                border-color: #ff4d4d;
+                box-shadow: rgba(255, 77, 77, 0.35) 0 0 12px;
+            }
+
+            &.success {
+                border-color: #589b0c;
+            }
+
+            &.error {
+                border-color: #a31107;
+            }
+
+            select {
+                width: 46px;
+                height: 30px;
+                border: none;
+                border-right: 1px solid #7f1717;
+                background: #240f0f;
+                color: #fff;
+                outline: none;
+                text-align: center;
+                font-weight: bold;
+            }
+
+            button {
+                width: 220px;
+                height: 30px;
+                border: none;
+                background: #b92828;
+                color: #fff;
+                cursor: pointer;
+                outline: none;
+                font-size: 12px;
+                font-weight: bold;
+                letter-spacing: 0;
+                white-space: nowrap;
+
+                &:hover {
+                    background: #d63232;
+                    box-shadow: rgba(255, 255, 255, 0.25) 0 0 10px inset;
+                }
+
+                &.busy {
+                    opacity: 0.55;
+                    cursor: default;
+                }
             }
         }
         .btn {

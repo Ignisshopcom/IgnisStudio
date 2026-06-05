@@ -223,6 +223,20 @@ async function probeAuraXDevice(ip, timeoutMs, allowFallback) {
   );
   const batteryPctRaw = status && status.battery_pct;
   const batteryMvRaw = status && status.battery_mv;
+  let syncEnabledRaw = status && status.sync_enabled !== undefined ? status.sync_enabled : undefined;
+  if (syncEnabledRaw === undefined && config && config.syncEnabled !== undefined) {
+    syncEnabledRaw = config.syncEnabled;
+  }
+  const syncMaskRaw = Number(
+    (status && status.sync_mask) ||
+    (config && config.syncMask) ||
+    0
+  );
+  const syncChannelRaw = Number(
+    (status && status.sync_channel) ||
+    (config && config.syncChannel) ||
+    0
+  );
   const fsTotal = Number(
     (programs && programs.total) ||
     (info && info.fs && info.fs.t) ||
@@ -254,6 +268,9 @@ async function probeAuraXDevice(ip, timeoutMs, allowFallback) {
     batteryMv: Number.isFinite(Number(batteryMvRaw)) ? Number(batteryMvRaw) : null,
     rssi,
     wifiPct,
+    syncEnabled: syncEnabledRaw === undefined ? null : !!syncEnabledRaw,
+    syncMask: Number.isFinite(syncMaskRaw) ? syncMaskRaw : 0,
+    syncChannel: Number.isFinite(syncChannelRaw) ? syncChannelRaw : 0,
     fsFree,
     fsUsed,
     fsTotal,
@@ -418,6 +435,15 @@ function deleteAuraXProgram(host, file) {
   return postAuraXJson(host, '/program/delete', { file: String(file || '') }, 5000);
 }
 
+function startAuraXProgram(host, slot, pressedAtMs) {
+  const targetHost = normalizeHost(host);
+  const programSlot = Number(slot);
+  const pressedAt = Number(pressedAtMs);
+  const ageMs = Number.isFinite(pressedAt) ? Math.max(0, Math.min(30000, Date.now() - pressedAt)) : 0;
+
+  return postAuraXJson(targetHost, '/program/start', { slot: programSlot, ageMs }, 8000);
+}
+
 const api = {
   dialogOpen(params) {
     return ipcRenderer.sendSync('dialog-open', JSON.stringify(params || {}));
@@ -523,6 +549,9 @@ const api = {
   },
   deleteAuraXProgram(host, file) {
     return deleteAuraXProgram(host, file);
+  },
+  startAuraXProgram(host, slot, pressedAtMs) {
+    return startAuraXProgram(host, slot, pressedAtMs);
   },
   fs: {
     existsSync(filePath) {

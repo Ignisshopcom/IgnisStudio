@@ -59,7 +59,6 @@ function IgnisTimeline(ignis)
     this.gmr = null;
     this.gmr_data = {};
     this.mirror_generation = {};
-    this.texture_generation = {};
     this.left = 40;
     this.vscroll = 0;
     this.ovs = 0;
@@ -129,10 +128,14 @@ IgnisTimeline.prototype.init = function ()
     app_register_action('audio_beginning', $.proxy(this.rewindFull, this));
     app_register_action('audio_end', $.proxy(this.forwardFull, this));
     app_register_action('audio_automove', $.proxy(this.automove_switch, this));
+    app_register_action('timeline_test_now', $.proxy(this.testNowProgram, this));
 
     app_register_action('zoom_in', $.proxy(this.zoomIn, this));
     app_register_action('zoom_out', $.proxy(this.zoomOut, this));
     app_register_action('zoom_fit', $.proxy(this.zoomFit, this));
+
+    $('#timeline-test-program').on('change', $.proxy(this.updateTestNowLabel, this));
+    this.updateTestNowLabel();
 
     app_register_event('audio_rendered', $.proxy(this.onAudioRendered, this));
     app_register_event('project_updated', $.proxy(this.onProjectUpdated, this));
@@ -156,7 +159,7 @@ IgnisTimeline.prototype.imagesWrapperDown = function (e)
 IgnisTimeline.prototype.imagesWrapperUp = function (e)
 {
     if (e.target != document.getElementById('timeline-images-wrapper')) return;
-    if (app_command_modifier(e)) return;
+    if (e.ctrlKey) return;
     if (Date.now() - this.wrapper_time < 250) this.deselect();
 }
 
@@ -320,32 +323,9 @@ IgnisTimeline.prototype.updateNodeElementImage = function (element, node, leds)
         element.css('background-image', 'url(img/icon.png)');
     } else {
         element.css('background-image', 'url(' + displayPath + '?t=' + Date.now() + ')');
-        this.ensureImageTexture(node, leds);
     }
 
     return displayPath != 'img/icon.png';
-}
-
-IgnisTimeline.prototype.ensureImageTexture = function (node, leds)
-{
-    if (!node || node.type == 'effect' || !node.hash) return;
-    if (this.textureExists(node.hash, leds)) return;
-
-    var key = node.hash + '_' + leds;
-    if (this.texture_generation[key]) return;
-
-    var image = this.ignis.library.getImageByHash(node.hash);
-    if (!image) return;
-
-    this.texture_generation[key] = true;
-    this.ignis.library.genTexForImage(image, $.proxy(function () {
-        delete this.texture_generation[key];
-        node.tex_loaded = true;
-        this.prev_hash = 'FORCE_REFRESH';
-        this.prev_hashes = [];
-        this.onProjectUpdated();
-        if (this.ignis.preview) this.ignis.preview.nodeChanged();
-    }, this));
 }
 
 IgnisTimeline.prototype.setPosition = function (i)
@@ -611,16 +591,14 @@ IgnisTimeline.prototype.moveTimelineDown = function (hash)
 
 IgnisTimeline.prototype.onKeyDown = function (e)
 {
-    if (app_command_modifier(e)) {
+    if (e.originalEvent.ctrlKey) {
         if (e.keyCode == 67) {
             // copy
             this.clipboardCopy();
-            e.preventDefault();
         }
         if (e.keyCode == 86) {
             // paste
             this.clipboardPaste(e.shiftKey);
-            e.preventDefault();
         }
     }
     if (e.keyCode == 33) {
@@ -735,7 +713,7 @@ IgnisTimeline.prototype.onMouseDown = function (e)
 {
     this.ignis.properties.deselect();
     if (e.button == 0 && this.isTimescaleHit(e)) {
-        if (!app_command_modifier(e)) this.clearSelectionVisuals();
+        if (!e.ctrlKey) this.clearSelectionVisuals();
         this.onCursorMouseDown(e);
         return;
     }
@@ -764,7 +742,7 @@ IgnisTimeline.prototype.onMouseDown = function (e)
         this.mx = (e.pageX - this.left);
         this.my = e.pageY;
         this.hover_mode = 'selection_box';
-        this.selection_additive = app_command_modifier(e);
+        this.selection_additive = e.ctrlKey;
         this.selection_start = this.getSelectionPoint(e);
         this.selection_current = this.selection_start;
         if (!this.selection_additive) {
@@ -1718,7 +1696,7 @@ IgnisTimeline.prototype.onImageClick = function (e)
     var uid = parseInt($(e.target).attr('uid'));
     var timelineHash = this.ignis.project.currentTimeline;
 
-    if (app_command_modifier(e)) {
+    if (e.ctrlKey) {
         this.selectNodeRef(timelineHash, uid, true);
     } else {
         this.selectNodeRef(timelineHash, uid, false);
@@ -1757,6 +1735,151 @@ IgnisTimeline.prototype.play = function ()
     $('#play-button').hide();
     $('#pause-button').show();
     this.ignis.audio.play(this.cursor_position);
+}
+
+IgnisTimeline.prototype.setTestNowStatus = function (message, state)
+{
+    var box = $('#timeline-test-controls');
+    box.removeClass('busy success error');
+    if (state) box.addClass(state);
+    if (message) box.attr('title', message);
+
+    if (this.ignis.properties && this.ignis.properties.setAuraXStatus) {
+        this.ignis.properties.setAuraXStatus(message || '', state || '');
+    }
+}
+
+IgnisTimeline.prototype.updateTestNowLabel = function ()
+{
+    $('#timeline-test-now').text('START PROGRAM ON ALL DEVICES');
+}
+
+IgnisTimeline.prototype.getKnownAuraXDevices = function ()
+{
+    var props = this.ignis.properties;
+    if (!props) return [];
+
+    var devices = props.getAuraXTestDevices ? props.getAuraXTestDevices() : (props.auraxDevices || []);
+    return devices || [];
+}
+
+IgnisTimeline.prototype.loadAuraXDevicesForTest = function ()
+{
+    var api = window.ignisElectron || window.electronApi || {};
+    var devices = this.getKnownAuraXDevices();
+    if (devices.length > 0 || !api.scanAuraXDevices) return Promise.resolve(devices);
+
+    this.setTestNowStatus('Scanning AuraX devices before test...', 'busy');
+    return api.scanAuraXDevices(2600).then($.proxy(function (found) {
+        var props = this.ignis.properties;
+        if (props) {
+            props.auraxDevices = found || [];
+            props.selectedAuraXHost = props.auraxDevices.length ? (props.auraxDevices[0].host || props.auraxDevices[0].ip) : null;
+            if (props.renderAuraXDevices) props.renderAuraXDevices();
+        }
+        return this.getKnownAuraXDevices();
+    }, this));
+}
+
+IgnisTimeline.prototype.getAuraXTestTargets = function (devices)
+{
+    var targets = [];
+    var seenHosts = {};
+    var seenSync = {};
+    var hasSyncInfo = false;
+
+    for (var i = 0; i < devices.length; i++) {
+        if (devices[i] && (devices[i].syncMask || devices[i].syncEnabled !== null)) {
+            hasSyncInfo = true;
+            break;
+        }
+    }
+
+    for (var j = 0; j < devices.length; j++) {
+        var device = devices[j];
+        var host = device && (device.host || device.ip);
+        if (!host || seenHosts[host]) continue;
+
+        var mask = parseInt(device.syncMask);
+        var canBroadcast = hasSyncInfo && device.syncEnabled !== false && !isNaN(mask) && mask > 0;
+        if (canBroadcast) {
+            var syncKey = 'sync-' + mask;
+            if (seenSync[syncKey]) continue;
+            seenSync[syncKey] = true;
+        }
+
+        seenHosts[host] = true;
+        targets.push(device);
+    }
+
+    return targets;
+}
+
+IgnisTimeline.prototype.startTimelineForTestNow = function ()
+{
+    this.cursor_position = 0;
+
+    try {
+        if (this.ignis.audio && this.ignis.audio.audioBuffer) {
+            this.play();
+            return;
+        }
+    } catch (error) {
+        console.warn('Test now audio playback failed:', error);
+    }
+
+    $('#play-button').hide();
+    $('#pause-button').show();
+    if (this.update) this.update(0);
+}
+
+IgnisTimeline.prototype.testNowProgram = function ()
+{
+    var api = window.ignisElectron || window.electronApi || {};
+    if (!api.startAuraXProgram) {
+        alert('AuraX test playback is not available in this Ignis Studio build.');
+        return;
+    }
+
+    var slot = parseInt($('#timeline-test-program').val());
+    if (isNaN(slot) || slot < 1 || slot > 3) slot = 1;
+
+    var trigger = $('#timeline-test-now');
+    if (trigger.hasClass('busy')) return;
+    trigger.addClass('busy');
+    var self = this;
+
+    this.loadAuraXDevicesForTest().then($.proxy(function (devices) {
+        if (!devices || devices.length == 0) {
+            this.setTestNowStatus('No AuraX devices found. Use Export AuraX > Scan or check the network.', 'error');
+            alert('No AuraX devices found. Use Export AuraX > Scan or check the network.');
+            return Promise.resolve();
+        }
+
+        var targets = this.getAuraXTestTargets(devices);
+        this.setTestNowStatus('Starting program ' + slot + ' through AuraX sync...', 'busy');
+        var pressedAtMs = Date.now();
+        this.startTimelineForTestNow();
+
+        var primary = targets[0];
+        return api.startAuraXProgram(primary.host || primary.ip, slot, pressedAtMs).then($.proxy(function (res) {
+            if (!res || !res.ok) {
+                var name = primary.deviceName || primary.hostname || primary.ip || primary.host || 'AuraX';
+                var detail = res ? (res.body || (res.statusCode ? ('HTTP ' + res.statusCode) : '')) : '';
+                this.setTestNowStatus(detail ? (name + ': ' + detail) : ('Program ' + slot + ' start failed.'), 'error');
+                return;
+            }
+
+            this.setTestNowStatus('Program ' + slot + ' started. AuraX sync will start devices in the selected sync channels.', 'success');
+        }, this)).catch($.proxy(function (err) {
+            this.setTestNowStatus(err && err.message ? err.message : 'Program ' + slot + ' start failed.', 'error');
+        }, this));
+    }, this)).catch($.proxy(function (err) {
+        this.setTestNowStatus(err && err.message ? err.message : 'AuraX Test now failed.', 'error');
+    }, this)).finally(function () {
+        trigger.removeClass('busy');
+        self.updateTestNowLabel();
+    });
 }
 
 IgnisTimeline.prototype.pause = function ()
@@ -2400,7 +2523,7 @@ IgnisTimeline.prototype.onInactiveImageClick = function (e)
     var el = $(e.currentTarget);
     var timelineHash = el.attr('timeline-hash');
     var uid = parseInt(el.attr('uid'));
-    var additive = app_command_modifier(e);
+    var additive = e.ctrlKey;
 
     this.selectNodeRef(timelineHash, uid, additive);
 }
@@ -2838,8 +2961,7 @@ IgnisTimeline.prototype.selectAllImages = function() {
 }
 
 IgnisTimeline.prototype.onGlobalKeyDown = function(e) {
-    if (app_command_modifier(e) && String(e.key || '').toLowerCase() === 'a') {
-        if ($('#library-images').is(':visible') && $('#library-images .library-img').length > 0) return;
+    if (e.ctrlKey && e.key === 'a') { // Změna podmínky na CTRL + A
         e.preventDefault();
         this.selectAllImages();
     }

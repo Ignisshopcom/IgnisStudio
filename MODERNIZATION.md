@@ -38,7 +38,7 @@ Build macOS artifacts on macOS. Electron Forge can package only some targets cro
 2. Replace synchronous IPC (`sendSync`) with `ipcRenderer.invoke` / `ipcMain.handle`.
 3. Replace `node-zip` with a maintained ZIP library.
 4. Replace browser-side Less compilation with compiled CSS during build.
-5. Move remote config from `http://petr.holly.darkyork.com/...` to HTTPS.
+5. Move legacy remote config to HTTPS.
 6. Add automated smoke tests for import, split-to-timelines, save/load, and export.
 7. Add macOS code signing and notarization settings before public distribution.
 

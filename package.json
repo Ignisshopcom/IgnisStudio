@@ -1,6 +1,6 @@
 {
   "name": "ignis",
-  "productName": "Ignis Studio",
+  "productName": "Ignis Studio 3.0",
   "version": "3.0.0",
   "description": "Ignis Studio",
   "main": "src/index.js",
@@ -42,7 +42,7 @@
   },
   "build": {
     "appId": "com.ignisshop.ignisstudio",
-    "productName": "Ignis Studio",
+    "productName": "Ignis Studio 3.0",
     "asar": false,
     "afterPack": "scripts/after-pack-win-icon.js",
     "directories": {
@@ -71,8 +71,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "Ignis Studio",
-      "artifactName": "Ignis Studio Setup ${version}.${ext}",
+      "shortcutName": "Ignis Studio 3.0",
+      "artifactName": "Ignis Studio 3.0 Setup ${version}.${ext}",
       "deleteAppDataOnUninstall": false
     },
     "mac": {

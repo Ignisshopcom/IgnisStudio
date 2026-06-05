@@ -558,6 +558,20 @@ IgnisProperties.prototype.deleteAuraXProgram = function (e)
     }, this));
 }
 
+IgnisProperties.prototype.getAuraXTestDevices = function ()
+{
+    var devices = [];
+    var seen = {};
+    for (var i = 0; i < (this.auraxDevices || []).length; i++) {
+        var device = this.auraxDevices[i];
+        var host = device && (device.host || device.ip);
+        if (!host || seen[host]) continue;
+        seen[host] = true;
+        devices.push(device);
+    }
+    return devices;
+}
+
 IgnisProperties.prototype.scanAuraXDevices = function ()
 {
     var api = window.ignisElectron || window.electronApi || {};
@@ -976,7 +990,7 @@ IgnisProperties.prototype.onKeyDown = function (e)
 
 IgnisProperties.prototype.onKey = function (e)
 {
-    if (app_command_modifier(e) && e.keyCode == 6) {
+    if (e.ctrlKey && e.keyCode == 6) {
         e.preventDefault();
         $('#fit-image-count').val('1');
         this.stretchImage();

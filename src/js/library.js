@@ -164,7 +164,6 @@ function IgnisLibrary(ignis)
     this.effectPreviewTimer = null;
     this.effectTimelineTimer = null;
     this.effectGalleryPreviewCache = {};
-    this.importingBatch = false;
     this.lib_image_dir = '';
     this.lib_audio_dir = '';
 
@@ -300,12 +299,9 @@ IgnisLibrary.prototype.init = function ()
 
     if (this.load()) {
         this.check();
+        this.genSizes();
+        this.genThumbs();
         this.fetchAudioInfo();
-        this.genSizes($.proxy(function () {
-            this.genThumbs($.proxy(function () {
-                this.update();
-            }, this));
-        }, this));
         this.update();
     } else {
         this.save();
@@ -347,36 +343,11 @@ IgnisLibrary.prototype.hideGeneratedImages = function ()
 
 IgnisLibrary.prototype.onKeyDown = function (e)
 {
-    if (app_editing_text(e)) return;
-
-    if (app_command_modifier(e) && String(e.key || '').toLowerCase() == 'a' && $('#library-images').is(':visible')) {
-        this.selectAllImages();
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        return;
-    }
-
-    if ((e.keyCode == 46 || e.keyCode == 8) && this.selected_items && this.selected_items.length > 0 && $('#library-images').is(':visible') && $('.library-img.selected').length > 0) {
+    if (e.keyCode == 46 && this.selected_items && this.selected_items.length > 0 && $('#library-images').is(':visible') && $('.library-img.selected').length > 0) {
         if (confirm("Are you sure you want to delete selected images from library?")) {
             this.removeSelectedImages();
         }
-        e.preventDefault();
     }
-}
-
-IgnisLibrary.prototype.selectAllImages = function ()
-{
-    this.selected_items = [];
-    this.selected_item = null;
-    $('#library-images').find('.library-img').each($.proxy(function (idx, el) {
-        var item = $(el).data('n');
-        if (!item || !item.hash) return;
-        $(el).addClass('selected');
-        this.selected_items.push(item.hash);
-        this.selected_item = item;
-    }, this));
-    this.ignis.timeline.deselect();
-    this.ignis.properties.deselect();
 }
 
 IgnisLibrary.prototype.clean = function (noreload)
@@ -589,7 +560,7 @@ IgnisLibrary.prototype.importFile = function (filePath, callback)
             }
 
             try {
-                finish(!!this.addFile(filePath, false, this.importingBatch));
+                finish(!!this.addFile(filePath));
             } catch (ex) {
                 console.error('Import failed:', filePath, ex);
                 this.importError(filePath);
@@ -605,40 +576,21 @@ IgnisLibrary.prototype.importFile = function (filePath, callback)
 
 IgnisLibrary.prototype.importFileList = function (filePaths)
 {
+    var pending = filePaths.length;
     var added = false;
-    var queue = (filePaths || []).slice(0);
 
-    if (queue.length == 0) return;
+    if (pending == 0) return;
 
-    this.importingBatch = true;
-    app_loading(true);
-
-    var next = $.proxy(function () {
-        if (queue.length == 0) {
-            this.importingBatch = false;
-            this.genSizes($.proxy(function () {
-                this.genThumbs($.proxy(function () {
-                    this.fetchAudioInfo();
-                    this.update();
-                    app_loading(false);
-                }, this));
-            }, this));
-            return;
-        }
-
-        var filePath = queue.shift();
-        this.importFile(filePath, $.proxy(function (ok) {
+    for (var i in filePaths) {
+        this.importFile(filePaths[i], $.proxy(function (ok) {
             if (ok) added = true;
-            if (!added && queue.length == 0) {
-                this.importingBatch = false;
-                app_loading(false);
-                return;
+            pending--;
+            if (pending == 0 && added) {
+                this.genThumbs();
+                this.update();
             }
-            setTimeout(next, 0);
         }, this));
-    }, this);
-
-    next();
+    }
 }
 
 IgnisLibrary.prototype.importFiles = function ()
@@ -1232,59 +1184,32 @@ IgnisLibrary.prototype.save = function (name)
 
 IgnisLibrary.prototype.genSizes = function (callback)
 {
+    var tosize = 0;
     var called = false;
-    var pending = [];
 
     for (var i in this.library.images) {
         var n = this.library.images[i];
+
         if (n.resolution) continue;
-        if (!fs.existsSync(n.path)) continue;
-        pending.push(n);
-    }
 
-    var done = $.proxy(function () {
-        if (callback && !called) {
-            called = true;
-            callback();
-        }
-    }, this);
-
-    var next = $.proxy(function () {
-        if (pending.length == 0) {
-            done();
-            return;
-        }
-
-        var n = pending.shift();
-        if (!n || !fs.existsSync(n.path)) {
-            setTimeout(next, 0);
-            return;
-        }
+        tosize++;
 
         var img = new Image();
         img.hash = n.hash;
         img.lib = this;
-        var finished = false;
-        var finish = $.proxy(function () {
-            if (finished) return;
-            finished = true;
-            setTimeout(next, 0);
-        }, this);
-        var timer = setTimeout($.proxy(function () {
-            console.warn('Skipping slow image size probe:', n.path);
-            finish();
-        }, this), 15000);
         img.onload = $.proxy(function (e) {
-            clearTimeout(timer);
             var idx = this.getImageIndexByHash(e.target.hash);
             if (idx !== false && this.library.images[idx]) {
                 this.library.images[idx].resolution = { w: e.target.width, h: e.target.height, r: e.target.width / e.target.height };
                 this.save();
             }
-            finish();
+            tosize--;
+            if (tosize == 0 && callback && !called) {
+                callback();
+                called = true;
+            }
         }, this);
         img.onerror = $.proxy(function (e) {
-            clearTimeout(timer);
             var image = this.getImageByHash(e.target.hash);
             if (image) {
                 console.warn('Removing unreadable image from library:', image.path);
@@ -1292,12 +1217,18 @@ IgnisLibrary.prototype.genSizes = function (callback)
                 this.update();
             }
 
-            finish();
+            tosize--;
+            if (tosize == 0 && callback && !called) {
+                callback();
+                called = true;
+            }
         }, this);
         img.src = this.fileUrl(n.path);
-    }, this);
+    }
 
-    next();
+    if (tosize == 0 && callback) {
+        callback();
+    }
 }
 
 IgnisLibrary.prototype.getThumbFilePath = function (hash)
@@ -1328,22 +1259,16 @@ IgnisLibrary.prototype.genThumbs = function (callback)
     }
 
     if (batch.length > 0) {
-        this.ignis.resizer.thumbBatch(batch, config.rendering.thumbnail_quality, $.proxy(function (err, data) {
+        this.ignis.resizer.thumbBatch(batch, config.rendering.thumbnail_quality, function (err, data) {
             app_execute_event('thumbs_generated');
-            if (window.electronApi.platform == "darwin" || config.forcePlatform == "darwin") {
-                if (callback) callback(err, data);
-                return;
-            }
-            this.genTexs(callback);
-        }, this));
+            if (callback) callback(err, data);
+        });
     } else {
         app_execute_event('thumbs_generated');
-        if (window.electronApi.platform == "darwin" || config.forcePlatform == "darwin") {
-            if (callback) callback(null, null);
-            return;
-        }
-        this.genTexs(callback);
+        if (callback) callback(null, null);
     }
+
+    this.genTexs(callback);
 }
 
 IgnisLibrary.prototype.genTexs = function (callback)
@@ -1366,19 +1291,13 @@ IgnisLibrary.prototype.genTexs = function (callback)
     }
 
     if (batch.length > 0) {
-        this.ignis.resizer.texBatch(batch, texh, config.rendering.texture_quality, $.proxy(function (err, data) {
-            for (var i in this.library.images) {
-                var n = this.library.images[i];
-                var tpath = texdir + path.sep + n.hash + '_' + texh + '.jpg';
-                if (fs.existsSync(tpath)) n.tex = true;
-            }
-            this.save();
+        this.ignis.resizer.texBatch(batch, texh, config.rendering.texture_quality, function (err, data) {
             app_execute_event('textures_generated');
             if (callback) callback(err, data);
-        }, this));
+        });
     } else {
         app_execute_event('textures_generated');
-        if (callback) callback(null, null);
+        if (callback) callback(err, data);
     }
 }
 
@@ -1506,7 +1425,7 @@ IgnisLibrary.prototype.update = function ()
                     this.selected_items.splice(idx, 1);
                 }
             } else {
-                if (app_command_modifier(e)) {
+                if (e.ctrlKey) {
                     $(e.target).addClass('selected');
                     this.selected_item = $(e.target).data('n');
                     var hash = $(e.target).data('n').hash;
@@ -1586,7 +1505,7 @@ IgnisLibrary.prototype.update = function ()
             var el = $(e.delegateTarget);
             var hash = el.attr('hash');
             if (!el.hasClass('selected')) {
-                if (!app_command_modifier(e)) {
+                if (!e.ctrlKey) {
                     $('.audio-libitem').removeClass('selected');
                     this.selected_audio = [];
                 }
@@ -2260,7 +2179,7 @@ IgnisLibrary.prototype.drag = function ()
     }, this));
 }
 
-IgnisLibrary.prototype.addFile = function (filepath, forcePath, deferProcessing)
+IgnisLibrary.prototype.addFile = function (filepath, forcePath)
 {
     var ext = path.extname(filepath).toLowerCase().substring(1);
     var base = path.basename(filepath);
@@ -2290,10 +2209,9 @@ IgnisLibrary.prototype.addFile = function (filepath, forcePath, deferProcessing)
         };
         this.library.images.push(n);
         this.save();
-        if (!deferProcessing) {
-            this.genSizes();
-            this.update();
-        }
+        this.genSizes();
+
+        this.update();
         return n.hash;
     }
 
@@ -2322,10 +2240,8 @@ IgnisLibrary.prototype.addFile = function (filepath, forcePath, deferProcessing)
         this.library.audio.push(n);
         this.save();
 
-        if (!deferProcessing) {
-            this.fetchAudioInfo();
-            this.update();
-        }
+        this.fetchAudioInfo();
+        this.update();
         return n.hash;
     }
 }
