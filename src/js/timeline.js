@@ -151,6 +151,43 @@ IgnisTimeline.prototype.init = function ()
     this.drawTimescale();
 }
 
+IgnisTimeline.prototype.getNativeEvent = function (e)
+{
+    return e && e.originalEvent ? e.originalEvent : e;
+}
+
+IgnisTimeline.prototype.isMac = function ()
+{
+    return window.electronApi && window.electronApi.platform == 'darwin';
+}
+
+IgnisTimeline.prototype.isCommandModifier = function (e)
+{
+    var oe = this.getNativeEvent(e);
+    return !!(oe && (oe.ctrlKey || oe.metaKey));
+}
+
+IgnisTimeline.prototype.isStretchModifier = function (e)
+{
+    var oe = this.getNativeEvent(e);
+    return !!(oe && (oe.shiftKey || (this.isMac() && oe.altKey)));
+}
+
+IgnisTimeline.prototype.isDeleteKey = function (e)
+{
+    var oe = this.getNativeEvent(e);
+    var key = oe && oe.key ? oe.key : '';
+    var code = oe ? (oe.keyCode || oe.which) : 0;
+    return code == 46 || code == 8 || key == 'Delete' || key == 'Backspace';
+}
+
+IgnisTimeline.prototype.isTypingTarget = function (e)
+{
+    var oe = this.getNativeEvent(e);
+    var target = oe && oe.target ? oe.target : e.target;
+    return $(target).is('input, textarea, select, [contenteditable=true]') || $(target).closest('.time-editor, #prompt-overlay').length > 0;
+}
+
 IgnisTimeline.prototype.imagesWrapperDown = function (e)
 {
     this.wrapper_time = Date.now();
@@ -159,7 +196,7 @@ IgnisTimeline.prototype.imagesWrapperDown = function (e)
 IgnisTimeline.prototype.imagesWrapperUp = function (e)
 {
     if (e.target != document.getElementById('timeline-images-wrapper')) return;
-    if (e.ctrlKey) return;
+    if (this.isCommandModifier(e)) return;
     if (Date.now() - this.wrapper_time < 250) this.deselect();
 }
 
@@ -591,23 +628,29 @@ IgnisTimeline.prototype.moveTimelineDown = function (hash)
 
 IgnisTimeline.prototype.onKeyDown = function (e)
 {
-    if (e.originalEvent.ctrlKey) {
+    if (this.isTypingTarget(e)) return;
+
+    if (this.isCommandModifier(e)) {
         if (e.keyCode == 67) {
             // copy
             this.clipboardCopy();
+            e.preventDefault();
         }
         if (e.keyCode == 86) {
             // paste
             this.clipboardPaste(e.shiftKey);
+            e.preventDefault();
         }
     }
     if (e.keyCode == 33) {
         // up
         this.moveTimelineUp(this.ignis.project.currentTimeline);
+        e.preventDefault();
     }
     if (e.keyCode == 34) {
         // down
         this.moveTimelineDown(this.ignis.project.currentTimeline);
+        e.preventDefault();
     }
 
     var as = this.ignis.audio.started;
@@ -617,20 +660,24 @@ IgnisTimeline.prototype.onKeyDown = function (e)
         } else {
             this.play();
         }
+        e.preventDefault();
     }
     if (e.keyCode == 37) {
         if (as) this.pause();
         this.cursor_position -= 1000;
         if (this.cursor_position < 0) this.cursor_position = 0;
         if (as) this.play();
+        e.preventDefault();
     }
     if (e.keyCode == 39) {
         if (as) this.pause();
         this.cursor_position += 1000;
         if (as) this.play();
+        e.preventDefault();
     }
-    if (e.keyCode == 46) {
+    if (this.isDeleteKey(e)) {
         this.removeSelected();
+        e.preventDefault();
     }
 }
 
@@ -713,7 +760,7 @@ IgnisTimeline.prototype.onMouseDown = function (e)
 {
     this.ignis.properties.deselect();
     if (e.button == 0 && this.isTimescaleHit(e)) {
-        if (!e.ctrlKey) this.clearSelectionVisuals();
+        if (!this.isCommandModifier(e)) this.clearSelectionVisuals();
         this.onCursorMouseDown(e);
         return;
     }
@@ -742,7 +789,7 @@ IgnisTimeline.prototype.onMouseDown = function (e)
         this.mx = (e.pageX - this.left);
         this.my = e.pageY;
         this.hover_mode = 'selection_box';
-        this.selection_additive = e.ctrlKey;
+        this.selection_additive = this.isCommandModifier(e);
         this.selection_start = this.getSelectionPoint(e);
         this.selection_current = this.selection_start;
         if (!this.selection_additive) {
@@ -1542,7 +1589,8 @@ IgnisTimeline.prototype.onImageMouseDown = function (e)
         return;
     }
 
-    if (!$(e.target).hasClass('active') && !$(e.target).hasClass('selected') && !e.shiftKey) return;
+    var stretchModifier = this.isStretchModifier(e);
+    if (!$(e.target).hasClass('active') && !$(e.target).hasClass('selected') && !stretchModifier) return;
 
     this.mdown = true;
     this.ox = e.offsetX;
@@ -1552,7 +1600,7 @@ IgnisTimeline.prototype.onImageMouseDown = function (e)
     this.hover_element = $(e.target);
     this.hover_index = this.hover_element.attr('idx');
 
-    if (e.shiftKey) {
+    if (stretchModifier) {
         $('.timeline-img').removeClass('active selected');
         this.hover_element.addClass('active selected');
         this.editor_index = this.hover_index;
@@ -1572,6 +1620,7 @@ IgnisTimeline.prototype.onImageMouseDown = function (e)
         this.stretch_target_index = this.stretch_source.timelineIndex;
         this.hover_element.addClass('timeline-img-stretching');
         this.updateStretchTimelinePreview(this.stretch_target_index);
+        e.preventDefault();
         return;
     }
 
@@ -1663,7 +1712,12 @@ IgnisTimeline.prototype.updateZoom = function (position, cx)
 IgnisTimeline.prototype.onImageMouseMove = function (e)
 {
     if (!$(e.target).hasClass('active') && !$(e.target).hasClass('selected')) {
-        $(e.target).css('cursor', 'pointer');
+        $(e.target).css('cursor', this.isStretchModifier(e) ? 'ns-resize' : 'pointer');
+        return;
+    }
+
+    if (this.isStretchModifier(e)) {
+        $(e.target).css('cursor', 'ns-resize');
         return;
     }
 
@@ -1696,7 +1750,7 @@ IgnisTimeline.prototype.onImageClick = function (e)
     var uid = parseInt($(e.target).attr('uid'));
     var timelineHash = this.ignis.project.currentTimeline;
 
-    if (e.ctrlKey) {
+    if (this.isCommandModifier(e)) {
         this.selectNodeRef(timelineHash, uid, true);
     } else {
         this.selectNodeRef(timelineHash, uid, false);
@@ -2061,11 +2115,11 @@ IgnisTimeline.prototype.onDropTimeline = function (e)
         var duration = config.timeline.default_duration;
         var lib = this.ignis.library.drag_item;
 
-        if (etype == 'libimg' && e.originalEvent.shiftKey && project.timelinesCount() > 1) {
+        if (etype == 'libimg' && this.isStretchModifier(e) && project.timelinesCount() > 1) {
             this.addImageAcrossTimelines(lib, time, duration);
             return true;
         }
-        if (etype == 'libeffect' && e.originalEvent.shiftKey && project.timelinesCount() > 1) {
+        if (etype == 'libeffect' && this.isStretchModifier(e) && project.timelinesCount() > 1) {
             this.addEffectAcrossTimelines(lib, time, duration);
             return true;
         }
@@ -2523,7 +2577,7 @@ IgnisTimeline.prototype.onInactiveImageClick = function (e)
     var el = $(e.currentTarget);
     var timelineHash = el.attr('timeline-hash');
     var uid = parseInt(el.attr('uid'));
-    var additive = e.ctrlKey;
+    var additive = this.isCommandModifier(e);
 
     this.selectNodeRef(timelineHash, uid, additive);
 }
@@ -2961,10 +3015,10 @@ IgnisTimeline.prototype.selectAllImages = function() {
 }
 
 IgnisTimeline.prototype.onGlobalKeyDown = function(e) {
-    if (e.ctrlKey && e.key === 'a') { // Změna podmínky na CTRL + A
+    if (this.isTypingTarget(e)) return;
+
+    if (this.isCommandModifier(e) && String(e.key || '').toLowerCase() === 'a') {
         e.preventDefault();
         this.selectAllImages();
     }
- 
-
 }

@@ -79,7 +79,7 @@ IgnisProject.prototype.init = function ()
     //console.log(ignis.config);
     //setInterval($.proxy(this.autoSave, this), 10000);
 
-    $(document).on('keypress', $.proxy(this.keyPress, this));
+    $(document).on('keydown', $.proxy(this.keyPress, this));
 }
 
 IgnisProject.prototype.clampLineFrequency = function (value)
@@ -119,43 +119,68 @@ IgnisProject.prototype.clampNodeStart = function (node)
     }
 }
 
+IgnisProject.prototype.getNativeEvent = function (e)
+{
+    return e && e.originalEvent ? e.originalEvent : e;
+}
+
+IgnisProject.prototype.isCommandModifier = function (e)
+{
+    var oe = this.getNativeEvent(e);
+    return !!(oe && (oe.ctrlKey || oe.metaKey));
+}
+
+IgnisProject.prototype.isTypingTarget = function (e)
+{
+    var oe = this.getNativeEvent(e);
+    var target = oe && oe.target ? oe.target : e.target;
+    return $(target).is('input, textarea, select, [contenteditable=true]') || $(target).closest('.time-editor, #prompt-overlay').length > 0;
+}
+
 IgnisProject.prototype.keyPress = function (e)
 {
-    if (e.ctrlKey) {
-        switch (e.keyCode) {
-            case 19: // SAVE
+    if (!this.isCommandModifier(e)) return;
+
+    var key = String((e.originalEvent && e.originalEvent.key) || e.key || '').toLowerCase();
+    var code = e.keyCode || (e.originalEvent && e.originalEvent.keyCode);
+    var handled = true;
+
+    switch (true) {
+        case code == 19 || key == 's': // SAVE
+            if (e.shiftKey) {
+                this.saveAs();
+            } else {
+                this.save();
+            }
+            break;
+        case code == 12 || key == 'o': // LOAD
+            this.load();
+            break;
+        case code == 14 || key == 'n': // NEW
+            this.new();
+            break;
+        case code == 5 || key == 'e': // EXPORT
+            if ($('#properties-export-box').is(':hidden')) {
+                this.ignis.properties.switchExport();
+            } else {
                 if (e.shiftKey) {
-                    this.saveAs();
+                    this.exportAs();
                 } else {
-                    this.save();
+                    this.export();
                 }
-                break;
-            case 12: // LOAD
-                this.load();
-                break;
-            case 14: // NEW
-                this.new();
-                break;
-            case 5: // EXPORT
-                if ($('#properties-export-box').is(':hidden')) {
-                    this.ignis.properties.switchExport();
-                } else {
-                    if (e.shiftKey) {
-                        this.exportAs();
-                    } else {
-                        this.export();
-                    }
-                }
-                break;
-            case 20: // ADD TIMELINE
-                this.addTimeline();
-                app_execute_event('project_updated');
-                app_execute_event('project_timelines_updated');
-                break;                    
-            default:
-                break;
-        }
+            }
+            break;
+        case code == 20 || key == 't': // ADD TIMELINE
+            this.addTimeline();
+            app_execute_event('project_updated');
+            app_execute_event('project_timelines_updated');
+            break;
+        default:
+            handled = false;
+            break;
     }
+
+    if (handled) e.preventDefault();
 }
 
 IgnisProject.prototype.autoSave = function ()

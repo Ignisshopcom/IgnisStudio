@@ -341,9 +341,38 @@ IgnisLibrary.prototype.hideGeneratedImages = function ()
     }
 }
 
+IgnisLibrary.prototype.getNativeEvent = function (e)
+{
+    return e && e.originalEvent ? e.originalEvent : e;
+}
+
+IgnisLibrary.prototype.isCommandModifier = function (e)
+{
+    var oe = this.getNativeEvent(e);
+    return !!(oe && (oe.ctrlKey || oe.metaKey));
+}
+
+IgnisLibrary.prototype.isDeleteKey = function (e)
+{
+    var oe = this.getNativeEvent(e);
+    var key = oe && oe.key ? oe.key : '';
+    var code = oe ? (oe.keyCode || oe.which) : 0;
+    return code == 46 || code == 8 || key == 'Delete' || key == 'Backspace';
+}
+
+IgnisLibrary.prototype.isTypingTarget = function (e)
+{
+    var oe = this.getNativeEvent(e);
+    var target = oe && oe.target ? oe.target : e.target;
+    return $(target).is('input, textarea, select, [contenteditable=true]') || $(target).closest('#prompt-overlay').length > 0;
+}
+
 IgnisLibrary.prototype.onKeyDown = function (e)
 {
-    if (e.keyCode == 46 && this.selected_items && this.selected_items.length > 0 && $('#library-images').is(':visible') && $('.library-img.selected').length > 0) {
+    if (this.isTypingTarget(e)) return;
+
+    if (this.isDeleteKey(e) && this.selected_items && this.selected_items.length > 0 && $('#library-images').is(':visible') && $('.library-img.selected').length > 0) {
+        e.preventDefault();
         if (confirm("Are you sure you want to delete selected images from library?")) {
             this.removeSelectedImages();
         }
@@ -1445,7 +1474,7 @@ IgnisLibrary.prototype.update = function ()
                     this.selected_items.splice(idx, 1);
                 }
             } else {
-                if (e.ctrlKey) {
+                if (this.isCommandModifier(e)) {
                     $(e.target).addClass('selected');
                     this.selected_item = $(e.target).data('n');
                     var hash = $(e.target).data('n').hash;
@@ -1525,7 +1554,7 @@ IgnisLibrary.prototype.update = function ()
             var el = $(e.delegateTarget);
             var hash = el.attr('hash');
             if (!el.hasClass('selected')) {
-                if (!e.ctrlKey) {
+                if (!this.isCommandModifier(e)) {
                     $('.audio-libitem').removeClass('selected');
                     this.selected_audio = [];
                 }

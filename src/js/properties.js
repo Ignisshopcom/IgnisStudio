@@ -972,25 +972,50 @@ IgnisProperties.prototype.updatePanel = function ()
     $('#editor-end-container').show();
 }
 
+IgnisProperties.prototype.getNativeEvent = function (e)
+{
+    return e && e.originalEvent ? e.originalEvent : e;
+}
+
+IgnisProperties.prototype.isCommandModifier = function (e)
+{
+    var oe = this.getNativeEvent(e);
+    return !!(oe && (oe.ctrlKey || oe.metaKey));
+}
+
+IgnisProperties.prototype.isDeleteKey = function (e)
+{
+    var oe = this.getNativeEvent(e);
+    var key = oe && oe.key ? oe.key : '';
+    var code = oe ? (oe.keyCode || oe.which) : 0;
+    return code == 46 || code == 8 || key == 'Delete' || key == 'Backspace';
+}
+
 IgnisProperties.prototype.onKeyDown = function (e)
 {
-    if (e.keyCode == 46 && $('.file-record.selected').length > 0) {
-        this.fileDelete(null, true);
-    }
     var trg = $('.time-editor').find('[selected]');
-    if (trg.length == 0) return;
-
-    if (e.keyCode == 8) {
-        this.timeSetKey(trg, 'bckspc');
+    if (trg.length > 0) {
+        if (e.keyCode == 8 || (e.originalEvent && e.originalEvent.key == 'Backspace')) {
+            e.preventDefault();
+            this.timeSetKey(trg, 'bckspc');
+        }
+        if (e.keyCode == 13) {
+            e.preventDefault();
+            this.timeSetKey(trg, 'set');
+        }
+        return;
     }
-    if (e.keyCode == 13) {
-        this.timeSetKey(trg, 'set');
+
+    if (this.isDeleteKey(e) && $('.file-record.selected').length > 0) {
+        e.preventDefault();
+        this.fileDelete(null, true);
     }
 }
 
 IgnisProperties.prototype.onKey = function (e)
 {
-    if (e.ctrlKey && e.keyCode == 6) {
+    var key = String((e.originalEvent && e.originalEvent.key) || e.key || '').toLowerCase();
+    if (this.isCommandModifier(e) && (e.keyCode == 6 || (e.shiftKey && key == 'f'))) {
         e.preventDefault();
         $('#fit-image-count').val('1');
         this.stretchImage();
