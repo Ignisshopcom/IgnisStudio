@@ -1,8 +1,8 @@
 const config = {
     title: 'Ignis Studio',
     titleHTML: '<span>IGNIS</span> STUDIO',
-    version: '3.0.0',
-    versionHTML: '3.0',
+    version: '3.1.0',
+    versionHTML: '3.1',
     forcePlatform: 'none', // darwin
     project: {
         default_name: 'unnamed',

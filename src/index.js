@@ -14,7 +14,7 @@ if (typeof app.disableDomainBlockingFor3DAPIs === 'function') {
 }
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.setAppUserModelId('com.ignisshop.ignisstudio');
-app.setName('Ignis Studio 3.0');
+app.setName('Ignis Studio 3.1');
 
 let mainWindow = null;
 let helpWindow = null;

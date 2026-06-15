@@ -1,7 +1,7 @@
 {
   "name": "ignis",
-  "productName": "Ignis Studio 3.0",
-  "version": "3.0.0",
+  "productName": "Ignis Studio 3.1",
+  "version": "3.1.0",
   "description": "Ignis Studio",
   "main": "src/index.js",
   "scripts": {
@@ -15,7 +15,9 @@
     "installer:mac:arm64": "electron-builder --mac dmg --arm64 --publish never",
     "publish": "electron-forge publish",
     "check:main": "node --check src/index.js",
-    "lint": "echo \"No linting configured\""
+    "lint": "echo \"No linting configured\"",
+    "installer:mac:universal": "electron-builder --mac dmg --universal --publish never",
+    "installer:mac:x64": "electron-builder --mac dmg --x64 --publish never"
   },
   "keywords": [],
   "author": {
@@ -42,7 +44,7 @@
   },
   "build": {
     "appId": "com.ignisshop.ignisstudio",
-    "productName": "Ignis Studio 3.0",
+    "productName": "Ignis Studio 3.1",
     "asar": false,
     "afterPack": "scripts/after-pack-win-icon.js",
     "directories": {
@@ -82,8 +84,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "Ignis Studio 3.0",
-      "artifactName": "Ignis Studio 3.0 Setup ${version}.${ext}",
+      "shortcutName": "Ignis Studio 3.1",
+      "artifactName": "Ignis Studio 3.1 Setup ${version}.${ext}",
       "deleteAppDataOnUninstall": false
     },
     "mac": {
@@ -92,10 +94,12 @@
       "target": [
         "dmg"
       ],
-      "category": "public.app-category.graphics-design"
+      "category": "public.app-category.graphics-design",
+      "gatekeeperAssess": false,
+      "minimumSystemVersion": "10.15.0"
     },
     "dmg": {
-      "artifactName": "Ignis Studio ${version}.${ext}"
+      "artifactName": "Ignis-Studio-${version}-macOS-${arch}.${ext}"
     },
     "fileAssociations": [
       {

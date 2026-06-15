@@ -3,6 +3,8 @@ name: Ignis Studio macOS
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     paths:
       - "**"
 
@@ -28,19 +30,22 @@ jobs:
       - name: Check Electron main process
         run: npm run check:main
 
-      - name: Build macOS DMG
-        run: npm run installer:mac:arm64
+      - name: Check macOS image resizer
+        run: node --check src/js/resizer.js
+
+      - name: Build macOS universal DMG
+        run: npm run installer:mac:universal
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: Ignis-Studio-macOS-Apple-Silicon-DMG
+          name: Ignis-Studio-3.1.0-macOS-universal-DMG
           path: out/installer/*.dmg
           if-no-files-found: error
 
       - name: Upload macOS app archive
         uses: actions/upload-artifact@v4
         with:
-          name: Ignis-Studio-macOS-unpacked
-          path: out/installer/mac*/Ignis Studio.app
+          name: Ignis-Studio-3.1.0-macOS-unpacked
+          path: out/installer/mac*/Ignis Studio 3.1.app
           if-no-files-found: ignore

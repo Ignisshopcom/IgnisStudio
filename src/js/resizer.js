@@ -27,6 +27,65 @@ IgnisResizer.prototype.execFile = function (cmd, params, callback)
     });
 }
 
+IgnisResizer.prototype.isMac = function ()
+{
+    return window.electronApi.platform == "darwin" || config.forcePlatform == "darwin";
+}
+
+IgnisResizer.prototype.getJimp = function ()
+{
+    if (!this.jimp) this.jimp = require('jimp');
+    return this.jimp;
+}
+
+IgnisResizer.prototype.writeJimp = function (img, to, callback)
+{
+    img.write(to, function (err) {
+        if (callback) callback(err || null, null, null);
+    });
+}
+
+IgnisResizer.prototype.flattenForJpeg = function (img)
+{
+    var Jimp = this.getJimp();
+    var bg = new Jimp(img.bitmap.width, img.bitmap.height, 0x000000ff);
+    bg.composite(img, 0, 0);
+    return bg;
+}
+
+IgnisResizer.prototype.runMacBatch = function (batch, worker, callback)
+{
+    if (!batch || batch.length == 0) {
+        if (callback) callback(null, null);
+        return;
+    }
+
+    var pending = batch.length;
+    var firstError = null;
+
+    var done = function (err) {
+        if (err && !firstError) firstError = err;
+        pending--;
+        if (pending == 0 && callback) callback(firstError, null);
+    };
+
+    for (let i in batch) {
+        worker.call(this, batch[i], done);
+    }
+}
+
+IgnisResizer.prototype.readMacImage = function (from, callback)
+{
+    var Jimp = this.getJimp();
+    Jimp.read(from)
+        .then(function (img) {
+            callback(null, img);
+        })
+        .catch(function (err) {
+            console.error('Image read failed:', from, err);
+            callback(err);
+        });
+}
 IgnisResizer.prototype.windowsResizerPath = function ()
 {
     var candidates = [];
@@ -74,7 +133,7 @@ IgnisResizer.prototype.tex = function (from, to, leds, quality, callback)
 
 IgnisResizer.prototype.thumbBatch = function (batch, max_size, callback)
 {
-    if (window.electronApi.platform == "darwin" || config.forcePlatform == "darwin") {
+    if (this.isMac()) {
         return this.thumbBatchMac(batch, max_size, callback);
     }
 
@@ -104,7 +163,7 @@ IgnisResizer.prototype.prepareBatchConfig = function (batch)
 
 IgnisResizer.prototype.exportBatch = function (batch, max_size, callback)
 {
-    if (window.electronApi.platform == "darwin" || config.forcePlatform == "darwin") {
+    if (this.isMac()) {
         return this.exportBatchMac(batch, max_size, callback);
     }
 
@@ -119,7 +178,7 @@ IgnisResizer.prototype.exportBatch = function (batch, max_size, callback)
 
 IgnisResizer.prototype.texBatch = function (batch, leds, quality, callback)
 {
-    if (window.electronApi.platform == "darwin" || config.forcePlatform == "darwin") {
+    if (this.isMac()) {
         return this.texBatchMac(batch, leds, quality, callback);
     }
 
@@ -136,24 +195,15 @@ IgnisResizer.prototype.texBatch = function (batch, leds, quality, callback)
 
 IgnisResizer.prototype.thumbBatchMac = function (batch, max_size, callback)
 {
-    this.thumb_batch_callback = callback;
-    var cmd = config.magick_darwin;
-
-    for (let i in batch) {
-        var from = batch[i].from;
-        var to = batch[i].to;
-
-        var params = [
-            from,
-            '-resize', '300x300',
-            to
-        ];
-
-        this.thumb_batch_processes.push(i);
-        this.execFile(cmd, params, $.proxy(function () {
-            this.thumbBatchExit(i);
+    var size = parseInt(max_size || config.rendering.thumbnail_quality || 300, 10);
+    this.runMacBatch(batch, function (item, done) {
+        this.readMacImage(item.from, $.proxy(function (err, img) {
+            if (err) return done(err);
+            img.scaleToFit(size, size);
+            if (/\.jpe?g$/i.test(item.to)) img = this.flattenForJpeg(img).quality(90);
+            this.writeJimp(img, item.to, done);
         }, this));
-    }
+    }, callback);
 }
 
 IgnisResizer.prototype.thumbBatchExit = function (process)
@@ -171,24 +221,17 @@ IgnisResizer.prototype.thumbBatchExit = function (process)
 
 IgnisResizer.prototype.exportBatchMac = function (batch, max_size, callback)
 {
-    this.export_batch_callback = callback;
-    var cmd = config.magick_darwin;
-
-    for (let i in batch) {
-        var from = batch[i].from;
-        var to = batch[i].to;
-
-        var params = [
-            from,
-            '-resize', 'x' + max_size,
-            to
-        ];
-
-        this.export_batch_processes.push(i);
-        this.execFile(cmd, params, $.proxy(function () {
-            this.thumbExportExit(i);
+    var height = parseInt(max_size, 10);
+    this.runMacBatch(batch, function (item, done) {
+        this.readMacImage(item.from, $.proxy(function (err, img) {
+            if (err) return done(err);
+            var targetHeight = Math.max(1, height || img.bitmap.height);
+            var width = Math.max(1, Math.round(img.bitmap.width * (targetHeight / img.bitmap.height)));
+            img.resize(width, targetHeight);
+            if (/\.jpe?g$/i.test(item.to)) img = this.flattenForJpeg(img).quality(90);
+            this.writeJimp(img, item.to, done);
         }, this));
-    }
+    }, callback);
 }
 
 IgnisResizer.prototype.thumbExportExit = function (process)
@@ -206,27 +249,21 @@ IgnisResizer.prototype.thumbExportExit = function (process)
 
 IgnisResizer.prototype.texBatchMac = function (batch, leds, quality, callback)
 {
-    this.tex_batch_callback = callback;
-    var cmd = config.magick_darwin;
+    var texHeight = parseInt(leds, 10);
+    var texSize = parseInt(quality || config.rendering.texture_quality || 512, 10);
+    var Jimp = this.getJimp();
 
-    for (let i in batch) {
-        var from = batch[i].from;
-        var to = batch[i].to;
-
-        var params = [
-            from,
-            '-resize', 'x' + leds,
-            '-interpolate', 'Nearest',
-            '-filter', 'point',
-            '-resize', '512x512!',
-            to
-        ];
-
-        this.tex_batch_processes.push(i);
-        this.execFile(cmd, params, $.proxy(function () {
-            this.thumbTexExit(i);
+    this.runMacBatch(batch, function (item, done) {
+        this.readMacImage(item.from, $.proxy(function (err, img) {
+            if (err) return done(err);
+            var targetHeight = Math.max(1, texHeight || img.bitmap.height);
+            var width = Math.max(1, Math.round(img.bitmap.width * (targetHeight / img.bitmap.height)));
+            img.resize(width, targetHeight, Jimp.RESIZE_NEAREST_NEIGHBOR);
+            img.resize(texSize, texSize, Jimp.RESIZE_NEAREST_NEIGHBOR);
+            if (/\.jpe?g$/i.test(item.to)) img = this.flattenForJpeg(img).quality(95);
+            this.writeJimp(img, item.to, done);
         }, this));
-    }
+    }, callback);
 }
 
 IgnisResizer.prototype.thumbTexExit = function (process)
@@ -246,7 +283,7 @@ IgnisResizer.prototype.resize = function (mode, from, to, width, height, callbac
 {
     if (!mode) mode = 'single';
 
-    if (window.electronApi.platform == "darwin" || config.forcePlatform == "darwin") {
+    if (this.isMac()) {
         return this.resizeMac( mode, from, to, width, height, callback );
     }
 
@@ -258,7 +295,30 @@ IgnisResizer.prototype.resize = function (mode, from, to, width, height, callbac
 
 IgnisResizer.prototype.resizeMac = function (mode, from, to, width, height, callback)
 {
+    var Jimp = this.getJimp();
+    var w = parseInt(width, 10);
+    var h = parseInt(height, 10);
 
+    this.readMacImage(from, $.proxy(function (err, img) {
+        if (err) {
+            if (callback) callback(err);
+            return;
+        }
+
+        var targetWidth = Math.max(1, w || img.bitmap.width);
+        var targetHeight = Math.max(1, h || img.bitmap.height);
+        var resizeMode = (mode == 'point') ? Jimp.RESIZE_NEAREST_NEIGHBOR : Jimp.RESIZE_BILINEAR;
+        img.resize(targetWidth, targetHeight, resizeMode);
+
+        if (mode == 'rotate') {
+            img.rotate(180, false);
+        } else if (mode == 'flip') {
+            img.flip(false, true);
+        }
+
+        if (/\.jpe?g$/i.test(to)) img = this.flattenForJpeg(img).quality(95);
+        this.writeJimp(img, to, callback);
+    }, this));
 }
 
 IgnisResizer.prototype.stickMirrorGap = function (hash, leds, gap, rotate, reverse, callback)

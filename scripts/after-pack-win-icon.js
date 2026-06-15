@@ -48,9 +48,9 @@ module.exports = async function afterPackWinIcon(context) {
     exePath,
     '--set-icon', iconPath,
     '--set-version-string', 'CompanyName', 'IgnisShop',
-    '--set-version-string', 'FileDescription', 'Ignis Studio 3.0',
-    '--set-version-string', 'ProductName', 'Ignis Studio 3.0',
-    '--set-version-string', 'InternalName', 'Ignis Studio 3.0',
+    '--set-version-string', 'FileDescription', 'Ignis Studio 3.1',
+    '--set-version-string', 'ProductName', 'Ignis Studio 3.1',
+    '--set-version-string', 'InternalName', 'Ignis Studio 3.1',
     '--set-version-string', 'OriginalFilename', exeName
   ], { stdio: 'inherit' });
 };
