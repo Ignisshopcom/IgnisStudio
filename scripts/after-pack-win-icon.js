@@ -4,6 +4,9 @@ const { execFileSync } = require('child_process');
 
 module.exports = async function afterPackWinIcon(context) {
   if (context.electronPlatformName === 'darwin') {
+    if (process.env.IGNIS_ADHOC_SIGN_DARWIN !== '1' || process.env.IGNIS_NOTARIZE === '1' || process.env.CSC_LINK) {
+      return;
+    }
     if (context.appOutDir.includes('-temp')) {
       return;
     }

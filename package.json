@@ -40,7 +40,8 @@
     "@electron-forge/maker-squirrel": "7.11.2",
     "@electron-forge/maker-zip": "7.11.2",
     "electron": "34.5.8",
-    "electron-builder": "latest"
+    "electron-builder": "latest",
+    "@electron/notarize": "^3.1.1"
   },
   "build": {
     "appId": "com.ignisshop.ignisstudio",
@@ -90,16 +91,31 @@
     },
     "mac": {
       "icon": "src/img/icon.icns",
-      "identity": null,
       "target": [
         "dmg"
       ],
       "category": "public.app-category.graphics-design",
       "gatekeeperAssess": false,
-      "minimumSystemVersion": "10.15.0"
+      "minimumSystemVersion": "10.15.0",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "dmg": {
-      "artifactName": "Ignis-Studio-${version}-macOS-${arch}.${ext}"
+      "artifactName": "Ignis-Studio-${version}-macOS-${arch}.${ext}",
+      "contents": [
+        {
+          "x": 140,
+          "y": 220,
+          "type": "file"
+        },
+        {
+          "x": 420,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     },
     "fileAssociations": [
       {
@@ -109,6 +125,7 @@
         "icon": "src/img/icon.ico",
         "role": "Editor"
       }
-    ]
+    ],
+    "afterSign": "scripts/notarize-mac.js"
   }
 }
