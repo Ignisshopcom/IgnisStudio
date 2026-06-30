@@ -136,6 +136,35 @@ function httpRequestText(host, route, options) {
       return;
     }
 
+    let settled = false;
+    let uploadCompleted = false;
+    let uploadFallbackTimer = null;
+    let overallTimer = null;
+
+    function resolveOnce(result) {
+      if (settled) return;
+      settled = true;
+      if (uploadFallbackTimer) clearTimeout(uploadFallbackTimer);
+      if (overallTimer) clearTimeout(overallTimer);
+      resolve(result);
+    }
+
+    function rejectOnce(error) {
+      if (settled) return;
+      settled = true;
+      if (uploadFallbackTimer) clearTimeout(uploadFallbackTimer);
+      if (overallTimer) clearTimeout(overallTimer);
+      reject(error);
+    }
+
+    function resolveUploadedFallback(message) {
+      resolveOnce({
+        statusCode: 202,
+        headers: {},
+        body: message || 'Upload complete. Device may be rebooting.',
+      });
+    }
+
     const req = http.request({
       hostname,
       port: 80,
@@ -147,7 +176,7 @@ function httpRequestText(host, route, options) {
       const chunks = [];
       res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
       res.on('end', () => {
-        resolve({
+        resolveOnce({
           statusCode: res.statusCode || 0,
           headers: res.headers || {},
           body: Buffer.concat(chunks).toString('utf8'),
@@ -155,13 +184,82 @@ function httpRequestText(host, route, options) {
       });
     });
 
-    req.on('timeout', () => req.destroy(new Error('timeout')));
-    req.on('error', reject);
-    if (body) req.write(body);
-    req.end();
+    req.on('timeout', () => {
+      if (opts.resolveOnUploadComplete && uploadCompleted) {
+        resolveUploadedFallback('Upload complete. Device rebooted before HTTP response.');
+        try { req.destroy(); } catch (error) {}
+        return;
+      }
+      req.destroy(new Error('timeout'));
+    });
+    req.on('error', (error) => {
+      if (opts.resolveOnUploadComplete && uploadCompleted) {
+        resolveUploadedFallback('Upload complete. Device rebooted before HTTP response.');
+        return;
+      }
+      rejectOnce(error);
+    });
+
+    const overallTimeoutMs = Math.max(0, Number(opts.overallTimeoutMs) || 0);
+    if (overallTimeoutMs > 0) {
+      overallTimer = setTimeout(() => {
+        if (opts.resolveOnUploadComplete && uploadCompleted) {
+          resolveUploadedFallback('Upload complete. Device is rebooting.');
+          try { req.destroy(); } catch (error) {}
+          return;
+        }
+        rejectOnce(new Error('Upload timeout.'));
+        try { req.destroy(); } catch (error) {}
+      }, overallTimeoutMs);
+    }
+
+    if (!body) {
+      req.end();
+      return;
+    }
+
+    const uploadProgress = typeof opts.onUploadProgress === 'function' ? opts.onUploadProgress : null;
+    if (!uploadProgress) {
+      req.write(body);
+      req.end();
+      return;
+    }
+
+    const payload = Buffer.isBuffer(body) ? body : Buffer.from(body);
+    const total = payload.length;
+    const chunkSize = 64 * 1024;
+    let offset = 0;
+
+    function writeChunk() {
+      if (offset >= total) {
+        uploadCompleted = true;
+        try { uploadProgress({ loaded: total, total, complete: true }); } catch (error) {}
+        if (opts.resolveOnUploadComplete) {
+          const graceMs = Math.max(0, Number(opts.resolveAfterUploadMs) || 1500);
+          uploadFallbackTimer = setTimeout(() => {
+            resolveUploadedFallback('Upload complete. Device is rebooting.');
+            try { req.destroy(); } catch (error) {}
+          }, graceMs);
+        }
+        req.end();
+        return;
+      }
+
+      const next = Math.min(offset + chunkSize, total);
+      const chunk = payload.subarray(offset, next);
+      offset = next;
+      const keepGoing = req.write(chunk);
+      try { uploadProgress({ loaded: offset, total, complete: false }); } catch (error) {}
+      if (keepGoing) {
+        setImmediate(writeChunk);
+      } else {
+        req.once('drain', writeChunk);
+      }
+    }
+
+    writeChunk();
   });
 }
-
 async function httpRequestJson(host, route, timeoutMs) {
   const res = await httpRequestText(host, route, { timeoutMs });
   if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -178,37 +276,63 @@ function wifiPctFromRssi(rssi) {
   return Math.max(0, Math.min(100, Math.round((value + 100) * 2)));
 }
 
+function boolish(value) {
+  return value === true || value === 1 || value === '1' || value === 'true';
+}
+
 async function probeAuraXDevice(ip, timeoutMs, allowFallback) {
+  const host = normalizeHost(ip);
   let info = null;
   let status = null;
   let config = null;
   let programs = null;
 
-  try { info = await httpRequestJson(ip, '/json/info', timeoutMs); } catch (error) {}
-
-  if (info && !(info.cn === 'AuraX' || info.brand === 'AuraX' || info.product === 'AuraX')) {
-    return null;
+  try { status = await httpRequestJson(host, '/status', Math.min(timeoutMs || 900, 1400)); } catch (error) {}
+  if (!status && !allowFallback) {
+    try { info = await httpRequestJson(host, '/json/info', Math.min(timeoutMs || 900, 1400)); } catch (error) {}
+    if (!info) return null;
   }
 
-  if (!info && !allowFallback) {
-    return null;
-  }
 
-  try { status = await httpRequestJson(ip, '/status', timeoutMs); } catch (error) {}
-  try { config = await httpRequestJson(ip, '/config', timeoutMs); } catch (error) {}
-  try { programs = await httpRequestJson(ip, '/programs', timeoutMs); } catch (error) {}
+  const details = await Promise.allSettled([
+    info ? Promise.resolve(info) : httpRequestJson(host, '/json/info', timeoutMs || 900),
+    status ? Promise.resolve(status) : httpRequestJson(host, '/status', timeoutMs || 900),
+    httpRequestJson(host, '/config', timeoutMs || 900),
+    httpRequestJson(host, '/programs', timeoutMs || 900),
+  ]);
 
-  const isAuraX = !!(
-    (info && (info.cn === 'AuraX' || info.brand === 'AuraX' || info.product === 'AuraX')) ||
-    (status && (status.hostname || status.device_name)) ||
-    (config && Number(config.numLeds))
+  info = details[0].status === 'fulfilled' ? details[0].value : info;
+  status = details[1].status === 'fulfilled' ? details[1].value : status;
+  config = details[2].status === 'fulfilled' ? details[2].value : null;
+  programs = details[3].status === 'fulfilled' ? details[3].value : null;
+
+
+  const infoIsAuraX = !!(
+    info && (
+      info.cn === 'AuraX' ||
+      info.brand === 'AuraX' ||
+      info.product === 'AuraX' ||
+      /AuraX/i.test(String(info.release || ''))
+    )
   );
+  const statusIsAuraX = !!(
+    status && (
+      status.sync_mask !== undefined ||
+      status.logical_led_count !== undefined ||
+      status.led_count !== undefined ||
+      status.partition_layout !== undefined ||
+      status.fw_build !== undefined
+    )
+  );
+  const configIsAuraX = !!(config && (Number(config.numLeds) || config.renderMirror !== undefined || config.syncMask !== undefined));
+  const isAuraX = !!(infoIsAuraX || statusIsAuraX || configIsAuraX);
 
   if (!isAuraX) return null;
 
   const numLeds = Number(
     (config && config.numLeds) ||
     (info && info.leds && info.leds.count) ||
+    (status && (status.led_count || status.num_leds || status.numLeds)) ||
     0
   );
   const rssi = Number(
@@ -237,13 +361,31 @@ async function probeAuraXDevice(ip, timeoutMs, allowFallback) {
     (config && config.syncChannel) ||
     0
   );
+  const renderMirrorRaw = (config && config.renderMirror !== undefined)
+    ? config.renderMirror
+    : (status && status.render_mirror !== undefined ? status.render_mirror : undefined);
+  const effectReverseRaw = (config && config.effectReverse !== undefined)
+    ? config.effectReverse
+    : (status && status.effect_reverse !== undefined ? status.effect_reverse : undefined);
+  const logicalLedsRaw = Number(
+    (status && (status.logical_led_count || status.logicalLeds)) ||
+    (info && info.leds && info.leds.count) ||
+    0
+  );
+  const logicalLeds = Number.isFinite(logicalLedsRaw) && logicalLedsRaw > 0
+    ? logicalLedsRaw
+    : (boolish(renderMirrorRaw) && numLeds > 1 ? Math.ceil(numLeds / 2) : numLeds);
   const fsTotal = Number(
     (programs && programs.total) ||
+    (status && status.fs && (status.fs.t || status.fs.total)) ||
+    (status && (status.fs_total || status.fsSize)) ||
     (info && info.fs && info.fs.t) ||
     0
   );
   const fsUsed = Number(
     (programs && programs.used) ||
+    (status && status.fs && (status.fs.u || status.fs.used)) ||
+    (status && status.fs_used) ||
     (info && info.fs && info.fs.u) ||
     0
   );
@@ -254,66 +396,143 @@ async function probeAuraXDevice(ip, timeoutMs, allowFallback) {
   const deviceName = (
     (config && (config.deviceName || config.hostname)) ||
     (status && (status.device_name || status.hostname)) ||
-    (info && info.name) ||
+    (info && (info.name || info.hostname)) ||
     'AuraX'
   );
 
   return {
-    ip: (status && status.ip) || (info && info.ip) || ip,
-    host: normalizeHost(ip),
+    ip: (status && status.ip) || (info && info.ip) || host,
+    host,
     deviceName,
     hostname: deviceName,
+    fwVersion: (status && (status.fw_version || status.version)) || (info && (info.ver || info.version)) || null,
+    chipId: (status && status.chip_id) || (info && info.vid) || null,
     numLeds,
+    logicalLeds,
     batteryPct: Number.isFinite(Number(batteryPctRaw)) ? Number(batteryPctRaw) : null,
     batteryMv: Number.isFinite(Number(batteryMvRaw)) ? Number(batteryMvRaw) : null,
     rssi,
     wifiPct,
-    syncEnabled: syncEnabledRaw === undefined ? null : !!syncEnabledRaw,
+    syncEnabled: syncEnabledRaw === undefined ? null : boolish(syncEnabledRaw),
     syncMask: Number.isFinite(syncMaskRaw) ? syncMaskRaw : 0,
     syncChannel: Number.isFinite(syncChannelRaw) ? syncChannelRaw : 0,
+    renderMirror: renderMirrorRaw === undefined ? false : boolish(renderMirrorRaw),
+    effectReverse: effectReverseRaw === undefined ? false : boolish(effectReverseRaw),
     fsFree,
     fsUsed,
     fsTotal,
+    programsLoaded: !!(programs && Array.isArray(programs.files)),
     programs: programs && Array.isArray(programs.files) ? programs.files : [],
   };
 }
+function parseAuraXUdpDevice(text, rinfo) {
+  const parts = String(text || '').trim().split(/\s+/);
+  if (parts[0] !== 'AURAX') return null;
 
-function discoverAuraXUdp(timeoutMs) {
+  const hostname = parts[1] && parts[1] !== '-' ? parts[1] : 'AuraX';
+  const ip = normalizeHost(parts[2] || (rinfo && rinfo.address));
+  if (!ip || !isPrivateIPv4(ip)) return null;
+
+  const batteryPct = Number(parts[4]);
+  const rssi = Number(parts[5]);
+  const syncMask = Number(parts[7]);
+
+  return {
+    ip,
+    host: ip,
+    deviceName: hostname,
+    hostname,
+    chipId: parts[3] || null,
+    batteryPct: Number.isFinite(batteryPct) ? batteryPct : null,
+    rssi: Number.isFinite(rssi) ? rssi : 0,
+    wifiPct: Number.isFinite(rssi) ? wifiPctFromRssi(rssi) : null,
+    syncEnabled: parts[6] === undefined ? null : parts[6] === '1' || parts[6] === 'true',
+    syncMask: Number.isFinite(syncMask) ? syncMask : 0,
+    programs: [],
+    source: 'udp',
+  };
+}
+
+function auraXDeviceKey(device) {
+  return normalizeHost((device && (device.host || device.ip)) || '');
+}
+
+function mergeAuraXDevice(current, next) {
+  if (!current) return Object.assign({}, next || {});
+  const merged = Object.assign({}, current);
+  for (const key of Object.keys(next || {})) {
+    const value = next[key];
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value) && value.length === 0 && Array.isArray(merged[key]) && merged[key].length > 0) continue;
+    if (key === 'programsLoaded' && merged[key] === true && value === false) continue;
+    if ((key === 'numLeds' || key === 'logicalLeds' || key === 'fsFree' || key === 'fsUsed' || key === 'fsTotal') && Number(value) === 0 && Number(merged[key]) > 0) continue;
+    merged[key] = value;
+  }
+  return merged;
+}
+
+function sortAuraXDevices(devices) {
+  return devices.sort((a, b) => {
+    return String(a.deviceName || a.hostname || a.ip || '').localeCompare(String(b.deviceName || b.hostname || b.ip || ''));
+  });
+}
+
+function discoverAuraXUdp(timeoutMs, onDeviceFound) {
   return new Promise((resolve) => {
-    const found = new Set();
+    const found = new Map();
     const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
     let finished = false;
+    let sendTimer = null;
+
+    function emit(device) {
+      const key = auraXDeviceKey(device);
+      if (!key) return;
+      const merged = mergeAuraXDevice(found.get(key), device);
+      found.set(key, merged);
+      if (typeof onDeviceFound === 'function') {
+        try { onDeviceFound(merged); } catch (error) {}
+      }
+    }
 
     function finish() {
       if (finished) return;
       finished = true;
+      if (sendTimer) clearInterval(sendTimer);
       try { socket.close(); } catch (error) {}
-      resolve(Array.from(found));
+      resolve(Array.from(found.values()));
     }
 
     socket.on('message', (msg, rinfo) => {
-      const text = msg.toString('utf8').trim();
-      const parts = text.split(/\s+/);
-      if (parts[0] !== 'AURAX') return;
-      const ip = parts[2] || rinfo.address;
-      if (isPrivateIPv4(ip)) found.add(ip);
+      const device = parseAuraXUdpDevice(msg.toString('utf8'), rinfo);
+      if (device) emit(device);
     });
     socket.on('error', finish);
     socket.bind(4210, () => {
       try { socket.setBroadcast(true); } catch (error) {}
       const packet = Buffer.from('AURAX?');
-      const broadcasts = new Set(['255.255.255.255']);
+      const broadcasts = new Set(['255.255.255.255', '192.168.4.255']);
       for (const subnet of getLocalAuraXSubnets()) broadcasts.add(subnet.broadcast);
-      for (const broadcast of broadcasts) {
-        try { socket.send(packet, 0, packet.length, 4210, broadcast); } catch (error) {}
+
+      let sends = 0;
+      function sendDiscovery() {
+        sends++;
+        for (const broadcast of broadcasts) {
+          try { socket.send(packet, 0, packet.length, 4210, broadcast); } catch (error) {}
+        }
+        if (sends >= 3 && sendTimer) {
+          clearInterval(sendTimer);
+          sendTimer = null;
+        }
       }
+      sendDiscovery();
+      sendTimer = setInterval(sendDiscovery, 350);
     });
 
-    setTimeout(finish, timeoutMs || 900);
+    setTimeout(finish, timeoutMs || 1400);
   });
 }
 
-function probeIpList(ips, timeoutMs, concurrency, allowFallback) {
+function probeIpList(ips, timeoutMs, concurrency, allowFallback, onDeviceFound) {
   return new Promise((resolve) => {
     const out = [];
     let index = 0;
@@ -324,7 +543,13 @@ function probeIpList(ips, timeoutMs, concurrency, allowFallback) {
         const ip = ips[index++];
         active++;
         probeAuraXDevice(ip, timeoutMs, allowFallback)
-          .then((device) => { if (device) out.push(device); })
+          .then((device) => {
+            if (!device) return;
+            out.push(device);
+            if (typeof onDeviceFound === 'function') {
+              try { onDeviceFound(device); } catch (error) {}
+            }
+          })
           .catch(() => {})
           .finally(() => {
             active--;
@@ -343,9 +568,34 @@ function probeIpList(ips, timeoutMs, concurrency, allowFallback) {
   });
 }
 
-async function scanAuraXDevices(timeoutMs) {
-  const scanTimeout = Math.max(800, Math.min(Number(timeoutMs) || 2600, 7000));
+async function scanAuraXDevices(timeoutMs, onDeviceFound) {
+  const scanTimeout = Math.max(1000, Math.min(Number(timeoutMs) || 3200, 7000));
   const candidates = new Set(['192.168.4.1', 'aurax.local']);
+  const devicesByHost = new Map();
+  const detailHosts = new Set();
+  const detailPromises = [];
+
+  function emit(device) {
+    const key = auraXDeviceKey(device);
+    if (!key) return null;
+    const merged = mergeAuraXDevice(devicesByHost.get(key), device);
+    devicesByHost.set(key, merged);
+    if (typeof onDeviceFound === 'function') {
+      try { onDeviceFound(merged); } catch (error) {}
+    }
+    return merged;
+  }
+
+  function queueDetailProbe(host) {
+    const normalized = normalizeHost(host);
+    if (!normalized || detailHosts.has(normalized)) return;
+    detailHosts.add(normalized);
+    detailPromises.push(
+      probeAuraXDevice(normalized, 2200, true)
+        .then((device) => { if (device) emit(device); })
+        .catch(() => {})
+    );
+  }
 
   for (const subnet of getLocalAuraXSubnets()) {
     for (let host = 1; host <= 254; host++) {
@@ -353,52 +603,73 @@ async function scanAuraXDevices(timeoutMs) {
     }
   }
 
-  const udpPromise = discoverAuraXUdp(Math.min(scanTimeout, 1200));
-  const scanned = await probeIpList(Array.from(candidates), 650, 64, false);
-  const udpIps = await udpPromise;
-  const knownHosts = new Set(scanned.map((device) => normalizeHost(device.host || device.ip)));
-  const udpOnly = udpIps.filter((ip) => !knownHosts.has(normalizeHost(ip)));
-  const udpDevices = await probeIpList(udpOnly, 900, 16, true);
+  const udpPromise = discoverAuraXUdp(Math.min(scanTimeout, 1800), (device) => {
+    emit(device);
+    queueDetailProbe(device.host || device.ip);
+  });
 
-  const devicesByIp = new Map();
-  for (const device of scanned.concat(udpDevices)) {
-    devicesByIp.set(normalizeHost(device.ip || device.host), device);
+  const scannedPromise = probeIpList(Array.from(candidates), 950, 72, false, (device) => {
+    emit(device);
+  });
+
+  await scannedPromise;
+  const udpDevices = await udpPromise;
+  for (const device of udpDevices) {
+    emit(device);
+    queueDetailProbe(device.host || device.ip);
   }
 
-  return Array.from(devicesByIp.values()).sort((a, b) => {
-    return String(a.deviceName || a.ip).localeCompare(String(b.deviceName || b.ip));
-  });
+  await Promise.allSettled(detailPromises);
+  return sortAuraXDevices(Array.from(devicesByHost.values()));
 }
-
-function uploadAuraXProgram(host, filename, data) {
-  const targetHost = normalizeHost(host);
+function buildAuraXMultipartBody(fieldName, filename, data) {
   const payload = Buffer.isBuffer(data) ? data : Buffer.from(data);
-  const safeName = path.basename(String(filename || 'program.axp')).replace(/"/g, '');
-  const boundary = `----IgnisAuraX${Date.now().toString(16)}`;
+  const safeField = String(fieldName || 'file').replace(/[^a-z0-9_-]/ig, '') || 'file';
+  const safeName = path.basename(String(filename || 'upload.bin')).replace(/"/g, '');
+  const boundary = `----IgnisAuraX${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
   const head = Buffer.from(
     `--${boundary}\r\n` +
-    `Content-Disposition: form-data; name="file"; filename="${safeName}"\r\n` +
+    `Content-Disposition: form-data; name="${safeField}"; filename="${safeName}"\r\n` +
     `Content-Type: application/octet-stream\r\n\r\n`,
     'utf8'
   );
   const tail = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
   const body = Buffer.concat([head, payload, tail]);
 
-  return httpRequestText(targetHost, '/program/upload', {
+  return { body, boundary, size: payload.length, filename: safeName };
+}
+
+function uploadAuraXMultipart(host, route, fieldName, filename, data, timeoutMs, onProgress, requestOptions) {
+  const targetHost = normalizeHost(host);
+  const multipart = buildAuraXMultipartBody(fieldName, filename, data);
+  const extraOptions = requestOptions || {};
+  return httpRequestText(targetHost, route, Object.assign({}, extraOptions, {
     method: 'POST',
-    timeoutMs: 30000,
-    body,
+    timeoutMs: timeoutMs || 30000,
+    body: multipart.body,
+    onUploadProgress: onProgress,
     headers: {
-      'Content-Type': `multipart/form-data; boundary=${boundary}`,
-      'Content-Length': body.length,
+      'Content-Type': `multipart/form-data; boundary=${multipart.boundary}`,
+      'Content-Length': multipart.body.length,
     },
-  }).then((res) => ({
+  })).then((res) => ({
     ok: res.statusCode >= 200 && res.statusCode < 300,
     statusCode: res.statusCode,
     body: res.body,
   }));
 }
 
+function uploadAuraXProgram(host, filename, data) {
+  return uploadAuraXMultipart(host, '/program/upload', 'file', filename || 'program.axp', data, 30000);
+}
+
+function uploadAuraXFirmware(host, filename, data, onProgress) {
+  return uploadAuraXMultipart(host, '/update', 'firmware', filename || 'firmware.bin', data, 45000, onProgress, {
+    resolveOnUploadComplete: true,
+    resolveAfterUploadMs: 1500,
+    overallTimeoutMs: 90000,
+  });
+}
 function postAuraXJson(host, route, payload, timeoutMs) {
   const body = Buffer.from(JSON.stringify(payload || {}), 'utf8');
   return httpRequestText(normalizeHost(host), route, {
@@ -435,13 +706,25 @@ function deleteAuraXProgram(host, file) {
   return postAuraXJson(host, '/program/delete', { file: String(file || '') }, 5000);
 }
 
-function startAuraXProgram(host, slot, pressedAtMs) {
+function startAuraXProgram(host, slot, pressedAtMs, relay) {
   const targetHost = normalizeHost(host);
   const programSlot = Number(slot);
   const pressedAt = Number(pressedAtMs);
   const ageMs = Number.isFinite(pressedAt) ? Math.max(0, Math.min(30000, Date.now() - pressedAt)) : 0;
+  const payload = { slot: programSlot, ageMs };
+  if (relay !== undefined) payload.relay = !!relay;
 
-  return postAuraXJson(targetHost, '/program/start', { slot: programSlot, ageMs }, 8000);
+  return postAuraXJson(targetHost, '/program/start', payload, 8000);
+}
+
+function stopAuraXProgram(host, relay) {
+  const targetHost = normalizeHost(host);
+  const route = relay === false ? '/stop?relay=0' : '/stop';
+  return httpRequestText(targetHost, route, { timeoutMs: 5000 }).then((res) => ({
+    ok: res.statusCode >= 200 && res.statusCode < 300,
+    statusCode: res.statusCode,
+    body: res.body,
+  }));
 }
 
 const api = {
@@ -545,11 +828,14 @@ const api = {
       });
     });
   },
-  scanAuraXDevices(timeoutMs) {
-    return scanAuraXDevices(timeoutMs);
+  scanAuraXDevices(timeoutMs, onDeviceFound) {
+    return scanAuraXDevices(timeoutMs, onDeviceFound);
   },
   uploadAuraXProgram(host, filename, data) {
     return uploadAuraXProgram(host, filename, data);
+  },
+  uploadAuraXFirmware(host, filename, data, onProgress) {
+    return uploadAuraXFirmware(host, filename, data, onProgress);
   },
   refreshAuraXDevice(host, timeoutMs) {
     return refreshAuraXDevice(host, timeoutMs);
@@ -563,8 +849,11 @@ const api = {
   deleteAuraXProgram(host, file) {
     return deleteAuraXProgram(host, file);
   },
-  startAuraXProgram(host, slot, pressedAtMs) {
-    return startAuraXProgram(host, slot, pressedAtMs);
+  startAuraXProgram(host, slot, pressedAtMs, relay) {
+    return startAuraXProgram(host, slot, pressedAtMs, relay);
+  },
+  stopAuraXProgram(host, relay) {
+    return stopAuraXProgram(host, relay);
   },
   fs: {
     existsSync(filePath) {

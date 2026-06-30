@@ -456,10 +456,10 @@
             height: 30px;
             margin-right: 0;
             vertical-align: top;
-            background: #17100f;
-            border: 1px solid #7f1717;
-            border-radius: 6px;
-            overflow: hidden;
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            overflow: visible;
             color: #eee;
 
             &.busy {
@@ -478,8 +478,9 @@
             select {
                 width: 46px;
                 height: 30px;
-                border: none;
-                border-right: 1px solid #7f1717;
+                border: 1px solid #7f1717;
+                border-right: none;
+                border-radius: 6px 0 0 6px;
                 background: #240f0f;
                 color: #fff;
                 outline: none;
@@ -488,9 +489,11 @@
             }
 
             button {
-                width: 220px;
+                width: 210px;
                 height: 30px;
-                border: none;
+                border: 1px solid #7f1717;
+                border-left: none;
+                border-radius: 0 6px 6px 0;
                 background: #b92828;
                 color: #fff;
                 cursor: pointer;
@@ -504,6 +507,18 @@
                     background: #d63232;
                     box-shadow: rgba(255, 255, 255, 0.25) 0 0 10px inset;
                 }
+                &#timeline-test-stop {
+                    width: 64px;
+                    margin-left: 10px;
+                    border: 1px solid #7f1717;
+                    border-radius: 6px;
+                    background: #4a1414;
+
+                    &:hover {
+                        background: #7f1717;
+                    }
+                }
+
 
                 &.busy {
                     opacity: 0.55;

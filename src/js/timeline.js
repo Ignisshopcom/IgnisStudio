@@ -129,6 +129,7 @@ IgnisTimeline.prototype.init = function ()
     app_register_action('audio_end', $.proxy(this.forwardFull, this));
     app_register_action('audio_automove', $.proxy(this.automove_switch, this));
     app_register_action('timeline_test_now', $.proxy(this.testNowProgram, this));
+    app_register_action('timeline_test_stop', $.proxy(this.stopTestNowProgram, this));
 
     app_register_action('zoom_in', $.proxy(this.zoomIn, this));
     app_register_action('zoom_out', $.proxy(this.zoomOut, this));
@@ -395,7 +396,12 @@ IgnisTimeline.prototype.update = function (timestamp)
     if (this.ignis.audio.started) {
         var pos = this.ignis.audio.getPosition();
         this.cursor_position = pos * 1000;
+    } else if (this.testPlaybackStarted) {
+        var elapsedMs = Date.now() - this.testPlaybackStartedAt;
+        if (elapsedMs < 0) elapsedMs = 0;
+        this.cursor_position = this.testPlaybackStartPosition + elapsedMs;
     }
+    var timelineRunning = this.isPlaybackRunning ? this.isPlaybackRunning() : this.ignis.audio.started;
 
     for (var hash in this.ignis.project.timelines) {
         var tl = this.ignis.project.timelines[hash];
@@ -424,7 +430,7 @@ IgnisTimeline.prototype.update = function (timestamp)
                 }
                 this.ignis.preview.setTextureIdx(pid, texturePath || (ignis_texdir() + '/' + file_hash + '_' + tl.leds + '.jpg?t='+t), current_node, ratio);
             }
-            this.ignis.preview.syncTimelinePositionIdx(pid, current_node, this.cursor_position, timestamp, this.ignis.audio.started);
+            this.ignis.preview.syncTimelinePositionIdx(pid, current_node, this.cursor_position, timestamp, timelineRunning);
             this.ignis.preview.running[pid] = true;
         } else {
             this.ignis.preview.running[pid] = false;
@@ -464,7 +470,7 @@ IgnisTimeline.prototype.update = function (timestamp)
             } else {
                 this.ignis.preview.multi_ratios[hash] = this.ignis.library.getImageByHash(current_node.hash).resolution.r;
             }
-            this.ignis.preview.syncMultiTimelinePosition(hash, current_node, this.cursor_position, timestamp, this.ignis.audio.started);
+            this.ignis.preview.syncMultiTimelinePosition(hash, current_node, this.cursor_position, timestamp, timelineRunning);
         } else {
             this.ignis.preview.multi_nodes[hash] = false;
         }
@@ -653,7 +659,7 @@ IgnisTimeline.prototype.onKeyDown = function (e)
         e.preventDefault();
     }
 
-    var as = this.ignis.audio.started;
+    var as = this.isPlaybackRunning ? this.isPlaybackRunning() : this.ignis.audio.started;
     if (e.keyCode == 32 || e.keyCode == 179) {
         if (as) {
             this.pause();
@@ -1784,11 +1790,35 @@ IgnisTimeline.prototype.selectNode = function (uid)
     this.refreshSelectionVisuals();
 }
 
+IgnisTimeline.prototype.isPlaybackRunning = function ()
+{
+    return !!((this.ignis.audio && this.ignis.audio.started) || this.testPlaybackStarted);
+}
+
+IgnisTimeline.prototype.startLocalTestPlayback = function (startedAtMs, startPosition)
+{
+    this.testPlaybackStarted = true;
+    this.testPlaybackStartedAt = Number(startedAtMs) || Date.now();
+    this.testPlaybackStartPosition = Number(startPosition) || 0;
+    $('#play-button').hide();
+    $('#pause-button').show();
+}
+
+IgnisTimeline.prototype.stopLocalTestPlayback = function ()
+{
+    this.testPlaybackStarted = false;
+}
+
 IgnisTimeline.prototype.play = function ()
 {
     $('#play-button').hide();
     $('#pause-button').show();
-    this.ignis.audio.play(this.cursor_position);
+    this.stopLocalTestPlayback();
+    if (this.ignis.audio && this.ignis.audio.audioBuffer) {
+        this.ignis.audio.play(this.cursor_position);
+    } else {
+        this.startLocalTestPlayback(Date.now(), this.cursor_position);
+    }
 }
 
 IgnisTimeline.prototype.setTestNowStatus = function (message, state)
@@ -1806,6 +1836,7 @@ IgnisTimeline.prototype.setTestNowStatus = function (message, state)
 IgnisTimeline.prototype.updateTestNowLabel = function ()
 {
     $('#timeline-test-now').text('START PROGRAM ON ALL DEVICES');
+    $('#timeline-test-stop').text('STOP');
 }
 
 IgnisTimeline.prototype.getKnownAuraXDevices = function ()
@@ -1839,7 +1870,7 @@ IgnisTimeline.prototype.getAuraXTestTargets = function (devices)
 {
     var targets = [];
     var seenHosts = {};
-    var seenSync = {};
+    var syncTargets = {};
     var hasSyncInfo = false;
 
     for (var i = 0; i < devices.length; i++) {
@@ -1853,23 +1884,34 @@ IgnisTimeline.prototype.getAuraXTestTargets = function (devices)
         var device = devices[j];
         var host = device && (device.host || device.ip);
         if (!host || seenHosts[host]) continue;
+        seenHosts[host] = true;
 
         var mask = parseInt(device.syncMask);
-        var canBroadcast = hasSyncInfo && device.syncEnabled !== false && !isNaN(mask) && mask > 0;
-        if (canBroadcast) {
+        var canRelay = hasSyncInfo && device.syncEnabled !== false && !isNaN(mask) && mask > 0;
+        if (canRelay) {
             var syncKey = 'sync-' + mask;
-            if (seenSync[syncKey]) continue;
-            seenSync[syncKey] = true;
+            if (!syncTargets[syncKey]) {
+                syncTargets[syncKey] = $.extend({}, device, {
+                    relay: true,
+                    syncGroupSize: 1,
+                });
+                targets.push(syncTargets[syncKey]);
+            } else {
+                syncTargets[syncKey].syncGroupSize++;
+            }
+            continue;
         }
 
-        seenHosts[host] = true;
-        targets.push(device);
+        targets.push($.extend({}, device, {
+            relay: false,
+            syncGroupSize: 1,
+        }));
     }
 
     return targets;
 }
 
-IgnisTimeline.prototype.startTimelineForTestNow = function ()
+IgnisTimeline.prototype.startTimelineForTestNow = function (startedAtMs)
 {
     this.cursor_position = 0;
 
@@ -1882,9 +1924,7 @@ IgnisTimeline.prototype.startTimelineForTestNow = function ()
         console.warn('Test now audio playback failed:', error);
     }
 
-    $('#play-button').hide();
-    $('#pause-button').show();
-    if (this.update) this.update(0);
+    this.startLocalTestPlayback(startedAtMs || Date.now(), 0);
 }
 
 IgnisTimeline.prototype.testNowProgram = function ()
@@ -1909,24 +1949,35 @@ IgnisTimeline.prototype.testNowProgram = function ()
             alert('No AuraX devices found. Use Export AuraX > Scan or check the network.');
             return Promise.resolve();
         }
-
         var targets = this.getAuraXTestTargets(devices);
-        this.setTestNowStatus('Starting program ' + slot + ' through AuraX sync...', 'busy');
+        var relayTargets = targets.filter(function (target) { return target.relay !== false; }).length;
+        this.setTestNowStatus('Starting program ' + slot + ' on ' + targets.length + ' AuraX target' + (targets.length == 1 ? '' : 's') + (relayTargets ? ' through sync relay' : '') + '...', 'busy');
         var pressedAtMs = Date.now();
-        this.startTimelineForTestNow();
+        this.startTimelineForTestNow(pressedAtMs);
 
-        var primary = targets[0];
-        return api.startAuraXProgram(primary.host || primary.ip, slot, pressedAtMs).then($.proxy(function (res) {
-            if (!res || !res.ok) {
-                var name = primary.deviceName || primary.hostname || primary.ip || primary.host || 'AuraX';
-                var detail = res ? (res.body || (res.statusCode ? ('HTTP ' + res.statusCode) : '')) : '';
-                this.setTestNowStatus(detail ? (name + ': ' + detail) : ('Program ' + slot + ' start failed.'), 'error');
+        return Promise.all(targets.map(function (target) {
+            return api.startAuraXProgram(target.host || target.ip, slot, pressedAtMs, target.relay !== false).then(function (res) {
+                return { target: target, res: res };
+            }).catch(function (err) {
+                return { target: target, error: err };
+            });
+        })).then($.proxy(function (results) {
+            var failed = [];
+            for (var i = 0; i < results.length; i++) {
+                var item = results[i];
+                if (item.error || !item.res || !item.res.ok) failed.push(item);
+            }
+
+            if (failed.length > 0) {
+                var first = failed[0];
+                var target = first.target || {};
+                var name = target.deviceName || target.hostname || target.ip || target.host || 'AuraX';
+                var detail = first.error ? first.error.message : (first.res && (first.res.body || (first.res.statusCode ? ('HTTP ' + first.res.statusCode) : '')));
+                this.setTestNowStatus(name + ': ' + (detail || ('Program ' + slot + ' start failed.')), 'error');
                 return;
             }
 
-            this.setTestNowStatus('Program ' + slot + ' started. AuraX sync will start devices in the selected sync channels.', 'success');
-        }, this)).catch($.proxy(function (err) {
-            this.setTestNowStatus(err && err.message ? err.message : 'Program ' + slot + ' start failed.', 'error');
+            this.setTestNowStatus('Program ' + slot + ' start sent' + (relayTargets ? ' through AuraX sync relay.' : ' to all AuraX targets.'), 'success');
         }, this));
     }, this)).catch($.proxy(function (err) {
         this.setTestNowStatus(err && err.message ? err.message : 'AuraX Test now failed.', 'error');
@@ -1936,11 +1987,78 @@ IgnisTimeline.prototype.testNowProgram = function ()
     });
 }
 
+IgnisTimeline.prototype.stopTimelineForTestNow = function ()
+{
+    $('#play-button').show();
+    $('#pause-button').hide();
+    this.stopLocalTestPlayback();
+    try {
+        if (this.ignis.audio && this.ignis.audio.started) this.ignis.audio.pause();
+    } catch (error) {
+        console.warn('Test now audio stop failed:', error);
+    }
+}
+
+IgnisTimeline.prototype.stopTestNowProgram = function ()
+{
+    var api = window.ignisElectron || window.electronApi || {};
+    if (!api.stopAuraXProgram) {
+        alert('AuraX test stop is not available in this Ignis Studio build.');
+        return;
+    }
+
+    var trigger = $('#timeline-test-stop');
+    if (trigger.hasClass('busy')) return;
+    trigger.addClass('busy');
+    var self = this;
+
+    this.loadAuraXDevicesForTest().then($.proxy(function (devices) {
+        if (!devices || devices.length == 0) {
+            this.setTestNowStatus('No AuraX devices found. Use Export AuraX > Scan or check the network.', 'error');
+            alert('No AuraX devices found. Use Export AuraX > Scan or check the network.');
+            return Promise.resolve();
+        }
+        var targets = this.getAuraXTestTargets(devices);
+        this.setTestNowStatus('Stopping program on ' + targets.length + ' AuraX target' + (targets.length == 1 ? '' : 's') + '...', 'busy');
+        this.stopTimelineForTestNow();
+
+        return Promise.all(targets.map(function (target) {
+            return api.stopAuraXProgram(target.host || target.ip, target.relay !== false).then(function (res) {
+                return { target: target, res: res };
+            }).catch(function (err) {
+                return { target: target, error: err };
+            });
+        })).then($.proxy(function (results) {
+            var failed = [];
+            for (var i = 0; i < results.length; i++) {
+                var item = results[i];
+                if (item.error || !item.res || !item.res.ok) failed.push(item);
+            }
+
+            if (failed.length > 0) {
+                var first = failed[0];
+                var target = first.target || {};
+                var name = target.deviceName || target.hostname || target.ip || target.host || 'AuraX';
+                var detail = first.error ? first.error.message : (first.res && (first.res.body || (first.res.statusCode ? ('HTTP ' + first.res.statusCode) : '')));
+                this.setTestNowStatus(name + ': ' + (detail || 'Program stop failed.'), 'error');
+                return;
+            }
+
+            this.setTestNowStatus('Program stop sent to all AuraX targets.', 'success');
+        }, this));
+    }, this)).catch($.proxy(function (err) {
+        this.setTestNowStatus(err && err.message ? err.message : 'AuraX stop failed.', 'error');
+    }, this)).finally(function () {
+        trigger.removeClass('busy');
+        self.updateTestNowLabel();
+    });
+}
 IgnisTimeline.prototype.pause = function ()
 {
     $('#play-button').show();
     $('#pause-button').hide();
-    this.ignis.audio.pause();
+    this.stopLocalTestPlayback();
+    if (this.ignis.audio) this.ignis.audio.pause();
 }
 
 IgnisTimeline.prototype.rewind = function ()

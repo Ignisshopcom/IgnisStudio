@@ -188,6 +188,8 @@ IgnisProperties.prototype.init = function ()
     app_register_action('export_mode_aurax', $.proxy(function () { this.setExportMode('aurax'); }, this));
     app_register_action('aurax_scan', $.proxy(this.scanAuraXDevices, this));
     app_register_action('aurax_upload', $.proxy(this.uploadSelectedAuraX, this));
+    app_register_action('aurax_firmware_update', $.proxy(this.chooseAuraXFirmware, this));
+    $('#aurax-firmware-file').on('change', $.proxy(this.onAuraXFirmwareFile, this));
     $('#aurax-device-list').on('click', '.aurax-identify-btn', $.proxy(this.identifyAuraXDevice, this));
     $('#aurax-device-list').on('click', '.aurax-program-up', $.proxy(this.moveAuraXProgramUp, this));
     $('#aurax-device-list').on('click', '.aurax-program-down', $.proxy(this.moveAuraXProgramDown, this));
@@ -368,7 +370,7 @@ IgnisProperties.prototype.renderAuraXDevices = function ()
     list.empty();
 
     if (!this.auraxDevices || this.auraxDevices.length == 0) {
-        list.append($('<div>').addClass('aurax-empty').text('No AuraX devices found.'));
+        list.append($('<div>').addClass('aurax-empty').text(this.auraxScanActive ? 'Scanning...' : 'No AuraX devices found.'));
         return;
     }
 
@@ -383,15 +385,26 @@ IgnisProperties.prototype.renderAuraXDevices = function ()
         var record = $('<div>')
             .addClass('aurax-device-record')
             .toggleClass('selected', selected)
+            .toggleClass('firmware-busy', device.firmwareState == 'busy')
+            .toggleClass('firmware-success', device.firmwareState == 'success')
+            .toggleClass('firmware-error', device.firmwareState == 'error')
             .attr('data-host', host);
 
         var main = $('<div>');
         main.append($('<strong>').text(device.deviceName || device.hostname || 'AuraX'));
-        main.append($('<span>').text(device.ip || host));
+        var hostText = device.ip || host;
+        if (device.fwVersion) hostText += '  FW ' + device.fwVersion;
+        main.append($('<span>').text(hostText));
 
         record.append(main);
         var actions = $('<div>').addClass('aurax-device-actions');
-        actions.append($('<span>').addClass('aurax-device-leds').text((device.numLeds || '?') + ' LEDs'));
+        var ledText = (device.numLeds || '?') + ' LEDs';
+        var physicalLeds = parseInt(device.numLeds);
+        var logicalLeds = parseInt(device.logicalLeds);
+        if (!isNaN(logicalLeds) && !isNaN(physicalLeds) && logicalLeds > 0 && logicalLeds != physicalLeds) {
+            ledText += (device.renderMirror ? ' / mirror ' : ' / logical ') + logicalLeds + ' px';
+        }
+        actions.append($('<span>').addClass('aurax-device-leds').text(ledText));
         actions.append($('<button>')
             .attr('type', 'button')
             .attr('title', 'Blink this device')
@@ -404,12 +417,17 @@ IgnisProperties.prototype.renderAuraXDevices = function ()
         details.append($('<span>').html('<i class="fas fa-wifi"></i>' + (device.wifiPct !== null && device.wifiPct !== undefined ? device.wifiPct + '%' : '-')));
         details.append($('<span>').html('<i class="fas fa-battery-half"></i>' + (device.batteryPct !== null && device.batteryPct !== undefined ? device.batteryPct + '%' : '-')));
         details.append($('<span>').html('<i class="fas fa-hdd"></i>' + this.formatAuraXBytes(device.fsFree || 0) + ' free'));
+        if (device.firmwareStatus) {
+            details.append($('<span>').addClass('aurax-device-firmware-status ' + (device.firmwareState || '')).html('<i class="fas fa-microchip"></i>' + device.firmwareStatus));
+        }
         record.append(details);
 
         if (selected) {
             var programs = $('<div>').addClass('aurax-programs');
             var files = device.programs || [];
-            if (files.length == 0) {
+            if (!device.programsLoaded) {
+                programs.append($('<div>').addClass('aurax-program-empty').text('Program list not loaded yet. Scan again if it does not appear.'));
+            } else if (files.length == 0) {
                 programs.append($('<div>').addClass('aurax-program-empty').text('No programs on this device.'));
             }
             for (var p = 0; p < files.length; p++) {
@@ -457,20 +475,25 @@ IgnisProperties.prototype.updateAuraXDevice = function (host, device)
 {
     if (!device) return;
     var normalized = device.host || device.ip || host;
+    device.host = normalized;
+    var updated = false;
     for (var i = 0; i < this.auraxDevices.length; i++) {
         var currentHost = this.auraxDevices[i].host || this.auraxDevices[i].ip;
         if (currentHost == host || currentHost == normalized) {
-            this.auraxDevices[i] = device;
-            this.selectedAuraXHost = device.host || device.ip || host;
-            this.renderAuraXDevices();
-            return;
+            this.auraxDevices[i] = $.extend({}, this.auraxDevices[i], device);
+            updated = true;
+            break;
         }
     }
-    this.auraxDevices.push(device);
-    this.selectedAuraXHost = device.host || device.ip || host;
+    if (!updated) {
+        this.auraxDevices.push(device);
+    }
+    this.auraxDevices.sort(function (a, b) {
+        return String(a.deviceName || a.hostname || a.ip || '').localeCompare(String(b.deviceName || b.hostname || b.ip || ''));
+    });
+    if (!this.selectedAuraXHost) this.selectedAuraXHost = normalized;
     this.renderAuraXDevices();
 }
-
 IgnisProperties.prototype.refreshAuraXDevice = function (host)
 {
     var api = window.ignisElectron || window.electronApi || {};
@@ -577,14 +600,28 @@ IgnisProperties.prototype.scanAuraXDevices = function ()
     var api = window.ignisElectron || window.electronApi || {};
     if (!api.scanAuraXDevices) {
         this.setAuraXStatus('AuraX scan is not available in this Ignis Studio build.', 'error');
-        return;
+        return Promise.resolve([]);
     }
 
+    var scanId = (this.auraxScanId || 0) + 1;
+    this.auraxScanId = scanId;
+    this.auraxScanActive = true;
+    this.auraxDevices = [];
+    this.selectedAuraXHost = null;
+    this.renderAuraXDevices();
     this.setAuraXStatus('Scanning local network...', 'busy');
     $('[action=aurax_scan]').prop('disabled', true);
 
-    api.scanAuraXDevices(2600).then($.proxy(function (devices) {
-        this.auraxDevices = devices || [];
+    var onDeviceFound = $.proxy(function (device) {
+        if (this.auraxScanId != scanId) return;
+        this.updateAuraXDevice(device.host || device.ip, device);
+        this.setAuraXStatus('Found ' + this.auraxDevices.length + ' AuraX device' + (this.auraxDevices.length == 1 ? '' : 's') + '... still scanning.', 'busy');
+    }, this);
+
+    return api.scanAuraXDevices(3200, onDeviceFound).then($.proxy(function (devices) {
+        if (this.auraxScanId != scanId) return this.auraxDevices || [];
+        this.auraxScanActive = false;
+        this.auraxDevices = devices || this.auraxDevices || [];
         if (this.auraxDevices.length > 0) {
             var stillSelected = false;
             for (var i = 0; i < this.auraxDevices.length; i++) {
@@ -597,16 +634,159 @@ IgnisProperties.prototype.scanAuraXDevices = function ()
             this.setAuraXStatus('No AuraX devices found. Make sure the PC and device are on the same network.', 'error');
         }
         this.renderAuraXDevices();
+        return this.auraxDevices;
     }, this)).catch($.proxy(function (e) {
+        if (this.auraxScanId != scanId) return this.auraxDevices || [];
+        this.auraxScanActive = false;
         this.auraxDevices = [];
         this.selectedAuraXHost = null;
         this.renderAuraXDevices();
         this.setAuraXStatus(e && e.message ? e.message : 'AuraX scan failed.', 'error');
-    }, this)).finally(function () {
+        return [];
+    }, this)).finally($.proxy(function () {
+        if (this.auraxScanId == scanId) this.auraxScanActive = false;
         $('[action=aurax_scan]').prop('disabled', false);
+        this.renderAuraXDevices();
+    }, this));
+}
+
+IgnisProperties.prototype.chooseAuraXFirmware = function ()
+{
+    var api = window.ignisElectron || window.electronApi || {};
+    if (!api.uploadAuraXFirmware) {
+        this.setAuraXStatus('AuraX firmware update is not available in this Ignis Studio build.', 'error');
+        return;
+    }
+    $('#aurax-firmware-file').val('').trigger('click');
+}
+
+IgnisProperties.prototype.readAuraXFile = function (file)
+{
+    return new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function () { resolve(reader.result); };
+        reader.onerror = function () { reject(reader.error || new Error('Cannot read selected file.')); };
+        reader.readAsArrayBuffer(file);
     });
 }
 
+IgnisProperties.prototype.setAuraXDeviceFirmwareStatus = function (host, status, state)
+{
+    for (var i = 0; i < (this.auraxDevices || []).length; i++) {
+        var device = this.auraxDevices[i];
+        var currentHost = device.host || device.ip;
+        if (currentHost == host) {
+            device.firmwareStatus = status;
+            device.firmwareState = state || '';
+            break;
+        }
+    }
+    this.renderAuraXDevices();
+}
+
+IgnisProperties.prototype.onAuraXFirmwareFile = function (e)
+{
+    var input = e.currentTarget;
+    var file = input.files && input.files[0];
+    if (!file) return;
+
+    if (!/\.bin$/i.test(file.name || '')) {
+        this.setAuraXStatus('Select a firmware .bin file.', 'error');
+        $(input).val('');
+        return;
+    }
+
+    this.readAuraXFile(file).then($.proxy(function (data) {
+        return this.uploadAuraXFirmwareAll(file, data);
+    }, this)).catch($.proxy(function (err) {
+        this.setAuraXStatus(err && err.message ? err.message : 'Cannot read selected firmware file.', 'error');
+    }, this)).finally(function () {
+        $(input).val('');
+    });
+}
+
+IgnisProperties.prototype.uploadAuraXFirmwareAll = function (file, data)
+{
+    var api = window.ignisElectron || window.electronApi || {};
+    if (!api.uploadAuraXFirmware) {
+        this.setAuraXStatus('AuraX firmware update is not available in this Ignis Studio build.', 'error');
+        return Promise.resolve();
+    }
+
+    var firmwareBytes = new Uint8Array(data || []);
+    if (firmwareBytes.length < 4096 || firmwareBytes[0] !== 0xE9) {
+        this.setAuraXStatus('Selected file does not look like a valid ESP32 firmware .bin.', 'error');
+        return Promise.resolve();
+    }
+
+    var startUpload = $.proxy(function () {
+        var devices = this.getAuraXTestDevices();
+        if (devices.length == 0) {
+            this.setAuraXStatus('No AuraX devices found. Scan the network first.', 'error');
+            return Promise.resolve();
+        }
+
+        if (!confirm('Update firmware on ' + devices.length + ' AuraX device' + (devices.length == 1 ? '' : 's') + '? Devices will reboot after upload. Do not power off devices during update.')) {
+            return Promise.resolve();
+        }
+        $('[action=aurax_scan], [action=aurax_upload], [action=aurax_firmware_update]').prop('disabled', true);
+        this.setAuraXStatus('Uploading firmware to ' + devices.length + ' AuraX device' + (devices.length == 1 ? '' : 's') + '...', 'busy');
+
+        var index = 0;
+        var success = 0;
+        var failed = 0;
+        var workerCount = Math.min(1, devices.length);
+        var lastFirmwareProgress = {};
+
+        var uploadOne = $.proxy(function (device) {
+            var host = device.host || device.ip;
+            this.setAuraXDeviceFirmwareStatus(host, 'Waiting...', 'busy');
+            return api.uploadAuraXFirmware(host, file.name, data, $.proxy(function (progress) {
+                var pct = progress && progress.total ? Math.min(100, Math.round(progress.loaded * 100 / progress.total)) : 0;
+                if (lastFirmwareProgress[host] === pct) return;
+                lastFirmwareProgress[host] = pct;
+                this.setAuraXDeviceFirmwareStatus(host, pct >= 100 ? 'Sent 100%, waiting for reboot' : 'Uploading ' + pct + '%', 'busy');
+            }, this)).then($.proxy(function (res) {
+                if (res && res.ok) {
+                    success++;
+                    this.setAuraXDeviceFirmwareStatus(host, 'Uploaded, rebooting', 'success');
+                } else {
+                    failed++;
+                    this.setAuraXDeviceFirmwareStatus(host, (res && res.body) || 'Firmware update failed', 'error');
+                }
+            }, this)).catch($.proxy(function (err) {
+                failed++;
+                this.setAuraXDeviceFirmwareStatus(host, err && err.message ? err.message : 'Firmware update failed', 'error');
+            }, this));
+        }, this);
+
+        var runNext = $.proxy(function () {
+            if (index >= devices.length) return Promise.resolve();
+            var device = devices[index++];
+            return uploadOne(device).then(runNext);
+        }, this);
+
+        var workers = [];
+        for (var w = 0; w < workerCount; w++) workers.push(runNext());
+
+        return Promise.all(workers).then($.proxy(function () {
+            if (failed > 0) {
+                this.setAuraXStatus('Firmware update finished: ' + success + ' OK, ' + failed + ' failed.', 'error');
+            } else {
+                this.setAuraXStatus('Firmware update uploaded to all devices. Devices are rebooting.', 'success');
+            }
+            setTimeout($.proxy(function () { this.scanAuraXDevices(); }, this), 9000);
+        }, this)).finally(function () {
+            $('[action=aurax_scan], [action=aurax_upload], [action=aurax_firmware_update]').prop('disabled', false);
+        });
+    }, this);
+
+    var devices = this.getAuraXTestDevices();
+    if (devices.length > 0) return startUpload();
+
+    this.setAuraXStatus('Scanning before firmware update...', 'busy');
+    return this.scanAuraXDevices().then(startUpload);
+}
 IgnisProperties.prototype.uploadSelectedAuraX = function ()
 {
     var api = window.ignisElectron || window.electronApi || {};
@@ -623,8 +803,15 @@ IgnisProperties.prototype.uploadSelectedAuraX = function ()
 
     var projectLeds = parseInt(this.ignis.project.leds);
     var deviceLeds = parseInt(device.numLeds);
-    if (deviceLeds > 0 && projectLeds != deviceLeds) {
-        this.setAuraXStatus('Program has ' + projectLeds + ' LEDs, but this device is set to ' + deviceLeds + '.', 'error');
+    var logicalLeds = parseInt(device.logicalLeds);
+    var mirrorLeds = device.renderMirror && deviceLeds > 1 ? (!isNaN(logicalLeds) && logicalLeds > 0 ? logicalLeds : Math.ceil(deviceLeds / 2)) : 0;
+    var ledCountOk = !(deviceLeds > 0) || projectLeds == deviceLeds || (!isNaN(logicalLeds) && logicalLeds > 0 && projectLeds == logicalLeds) || (mirrorLeds > 0 && projectLeds == mirrorLeds);
+    if (!ledCountOk) {
+        if (mirrorLeds > 0) {
+            this.setAuraXStatus('Program has ' + projectLeds + ' LEDs, but this mirror device accepts ' + deviceLeds + ' LEDs or ' + mirrorLeds + ' mirrored pixels.', 'error');
+        } else {
+            this.setAuraXStatus('Program has ' + projectLeds + ' LEDs, but this device is set to ' + deviceLeds + '.', 'error');
+        }
         return;
     }
 

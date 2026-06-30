@@ -598,6 +598,18 @@
                     box-shadow: inset 3px 0 0 #f26722;
                 }
 
+                &.firmware-busy {
+                    border-color: #d9822b;
+                }
+
+                &.firmware-success {
+                    border-color: #589b0c;
+                }
+
+                &.firmware-error {
+                    border-color: #a31107;
+                }
+
                 strong, span {
                     display: block;
                 }
@@ -648,6 +660,22 @@
                     i {
                         color: #f26722;
                         margin-right: 4px;
+                    }
+
+                    .aurax-device-firmware-status {
+                        color: #ddd;
+
+                        &.busy {
+                            color: #ffb15c;
+                        }
+
+                        &.success {
+                            color: #9fe45a;
+                        }
+
+                        &.error {
+                            color: #ffb4ae;
+                        }
                     }
                 }
 
@@ -762,7 +790,7 @@
             left: 0px;
             right: 0px;
             display: grid;
-            grid-template-columns: 110px 1fr;
+            grid-template-columns: 100px minmax(0, 1fr) auto;
             gap: 8px;
             padding-bottom: 10px;
 
@@ -786,6 +814,27 @@
 
                 &:disabled {
                     opacity: 0.45;
+                }
+
+                &[action="aurax_firmware_update"] {
+                    height: 26px;
+                    align-self: center;
+                    padding: 0 9px;
+                    border: 1px solid #5c4a19;
+                    background-color: #1a1a1a;
+                    color: #d6c17a;
+                    font-size: 11px;
+                    box-shadow: none;
+
+                    &:hover {
+                        border-color: #d6c17a;
+                        color: #f0dc99;
+                        box-shadow: none;
+                    }
+
+                    &:active {
+                        background-color: #111;
+                    }
                 }
             }
         }
