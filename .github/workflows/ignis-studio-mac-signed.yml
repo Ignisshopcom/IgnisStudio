@@ -52,7 +52,12 @@ jobs:
 
       - name: Build signed x64 DMG
         timeout-minutes: 20
-        run: npm run installer:mac:x64
+        env:
+          APPLE_API_KEY: ""
+          APPLE_API_KEY_BASE64: ""
+          APPLE_API_KEY_ID: ""
+          APPLE_API_ISSUER: ""
+        run: npx electron-builder --mac dmg --x64 --publish never --config.mac.notarize=false
 
       - name: Notarize and staple DMG
         timeout-minutes: 35
