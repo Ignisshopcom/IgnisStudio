@@ -79,6 +79,11 @@ jobs:
           echo "Packaged source files: $(find "$APP_PATH/Contents/Resources/app/src" -type f | wc -l | tr -d ' ')"
           plutil -p "$APP_PATH/Contents/Info.plist" | grep -E 'CFBundleIdentifier|CFBundleName|CFBundleDisplayName|CFBundleDocumentTypes' || true
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          APP_EXEC="$APP_PATH/Contents/MacOS/Ignis Studio 3.1"
+          ARCHS="$(lipo -archs "$APP_EXEC")"
+          echo "Executable architectures: $ARCHS"
+          [[ " $ARCHS " == *" arm64 "* ]]
+          [[ " $ARCHS " == *" x86_64 "* ]]
 
       - name: Notarize and staple DMG
         timeout-minutes: 365
@@ -88,12 +93,92 @@ jobs:
           DMG_PATH="$(find out/installer -name '*.dmg' -print -quit)"
           test -n "$DMG_PATH"
           echo "Submitting DMG for notarization: $DMG_PATH"
-          xcrun notarytool submit "$DMG_PATH" \
-            --key "$APPLE_API_KEY" \
-            --key-id "$APPLE_API_KEY_ID" \
-            --issuer "$APPLE_API_ISSUER" \
-            --wait \
-            --timeout 360m
+
+          SUBMIT_ATTEMPT=0
+          SUBMIT_JSON=""
+          until [ -n "$SUBMIT_JSON" ]; do
+            SUBMIT_ATTEMPT=$((SUBMIT_ATTEMPT + 1))
+            SUBMIT_ERR="$(mktemp)"
+            set +e
+            SUBMIT_JSON="$(xcrun notarytool submit "$DMG_PATH" \
+              --key "$APPLE_API_KEY" \
+              --key-id "$APPLE_API_KEY_ID" \
+              --issuer "$APPLE_API_ISSUER" \
+              --output-format json 2>"$SUBMIT_ERR")"
+            SUBMIT_STATUS=$?
+            set -e
+            if [ "$SUBMIT_STATUS" -eq 0 ]; then
+              rm -f "$SUBMIT_ERR"
+              break
+            fi
+            echo "::warning::notarytool submit failed on attempt $SUBMIT_ATTEMPT"
+            cat "$SUBMIT_ERR" || true
+            rm -f "$SUBMIT_ERR"
+            if [ "$SUBMIT_ATTEMPT" -ge 5 ]; then
+              exit "$SUBMIT_STATUS"
+            fi
+            SUBMIT_JSON=""
+            sleep 60
+          done
+
+          echo "$SUBMIT_JSON"
+          SUBMISSION_ID="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("id", ""))' <<< "$SUBMIT_JSON")"
+          test -n "$SUBMISSION_ID"
+          echo "Notary submission id: $SUBMISSION_ID"
+
+          STARTED_AT="$(date +%s)"
+          TIMEOUT_SECONDS=$((360 * 60))
+          CONSECUTIVE_ERRORS=0
+          while true; do
+            NOW="$(date +%s)"
+            ELAPSED=$((NOW - STARTED_AT))
+            if [ "$ELAPSED" -gt "$TIMEOUT_SECONDS" ]; then
+              echo "::error::Timed out waiting for Apple notarization after ${ELAPSED}s"
+              exit 124
+            fi
+
+            INFO_ERR="$(mktemp)"
+            set +e
+            INFO_JSON="$(xcrun notarytool info "$SUBMISSION_ID" \
+              --key "$APPLE_API_KEY" \
+              --key-id "$APPLE_API_KEY_ID" \
+              --issuer "$APPLE_API_ISSUER" \
+              --output-format json 2>"$INFO_ERR")"
+            INFO_STATUS=$?
+            set -e
+            if [ "$INFO_STATUS" -ne 0 ]; then
+              CONSECUTIVE_ERRORS=$((CONSECUTIVE_ERRORS + 1))
+              echo "::warning::notarytool info failed on attempt $CONSECUTIVE_ERRORS"
+              cat "$INFO_ERR" || true
+              rm -f "$INFO_ERR"
+              if [ "$CONSECUTIVE_ERRORS" -ge 60 ]; then
+                echo "::error::Too many consecutive notarytool info failures"
+                exit "$INFO_STATUS"
+              fi
+              sleep 60
+              continue
+            fi
+            rm -f "$INFO_ERR"
+            CONSECUTIVE_ERRORS=0
+
+            STATUS="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("status", "Unknown"))' <<< "$INFO_JSON")"
+            echo "Current status: $STATUS (${ELAPSED}s elapsed)"
+            case "$STATUS" in
+              Accepted)
+                break
+                ;;
+              Invalid|Rejected)
+                echo "$INFO_JSON"
+                xcrun notarytool log "$SUBMISSION_ID" \
+                  --key "$APPLE_API_KEY" \
+                  --key-id "$APPLE_API_KEY_ID" \
+                  --issuer "$APPLE_API_ISSUER" || true
+                exit 1
+                ;;
+            esac
+            sleep 30
+          done
+
           xcrun stapler staple "$DMG_PATH"
           xcrun stapler validate "$DMG_PATH"
 
