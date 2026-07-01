@@ -1,4 +1,4 @@
-﻿name: Ignis Studio macOS Signed
+name: Ignis Studio macOS Signed
 
 on:
   workflow_dispatch:
@@ -17,6 +17,7 @@ jobs:
       APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       IGNIS_NOTARIZE: "1"
+      DEBUG: "electron-builder,@electron/notarize*"
 
     steps:
       - uses: actions/checkout@v4
@@ -49,8 +50,9 @@ jobs:
       - name: Check signing and notarization secrets
         run: node scripts/check-mac-signing-env.js
 
-      - name: Build signed and notarized universal DMG
-        run: npm run installer:mac:universal
+      - name: Build signed and notarized x64 DMG
+        timeout-minutes: 35
+        run: npm run installer:mac:x64
 
       - name: Verify macOS signature and notarization
         shell: bash
@@ -69,7 +71,7 @@ jobs:
       - name: Upload signed DMG
         uses: actions/upload-artifact@v4
         with:
-          name: Ignis-Studio-3.1.0-macOS-signed-notarized-DMG
+          name: Ignis-Studio-3.1.0-macOS-x64-signed-notarized-DMG
           path: out/installer/*.dmg
           if-no-files-found: error
 
