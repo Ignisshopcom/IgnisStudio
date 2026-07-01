@@ -81,7 +81,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
       - name: Notarize and staple DMG
-        timeout-minutes: 125
+        timeout-minutes: 365
         shell: bash
         run: |
           set -euo pipefail
@@ -93,7 +93,7 @@ jobs:
             --key-id "$APPLE_API_KEY_ID" \
             --issuer "$APPLE_API_ISSUER" \
             --wait \
-            --timeout 120m
+            --timeout 360m
           xcrun stapler staple "$DMG_PATH"
           xcrun stapler validate "$DMG_PATH"
 
