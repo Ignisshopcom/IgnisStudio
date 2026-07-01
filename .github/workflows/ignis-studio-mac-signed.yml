@@ -16,7 +16,7 @@ jobs:
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      IGNIS_NOTARIZE: "1"
+      IGNIS_NOTARIZE: "0"
       DEBUG: "electron-builder,@electron/notarize*"
 
     steps:
@@ -50,9 +50,26 @@ jobs:
       - name: Check signing and notarization secrets
         run: node scripts/check-mac-signing-env.js
 
-      - name: Build signed and notarized x64 DMG
-        timeout-minutes: 35
+      - name: Build signed x64 DMG
+        timeout-minutes: 20
         run: npm run installer:mac:x64
+
+      - name: Notarize and staple DMG
+        timeout-minutes: 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          DMG_PATH="$(find out/installer -name '*.dmg' -print -quit)"
+          test -n "$DMG_PATH"
+          echo "Submitting DMG for notarization: $DMG_PATH"
+          xcrun notarytool submit "$DMG_PATH" \
+            --key "$APPLE_API_KEY" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER" \
+            --wait \
+            --timeout 30m
+          xcrun stapler staple "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
 
       - name: Verify macOS signature and notarization
         shell: bash
@@ -64,8 +81,8 @@ jobs:
           test -n "$DMG_PATH"
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
           codesign -dv --verbose=4 "$APP_PATH"
-          spctl --assess --type execute --verbose=4 "$APP_PATH"
-          xcrun stapler validate "$APP_PATH"
+          spctl -a -t open --context context:primary-signature -v "$DMG_PATH"
+          xcrun stapler validate "$DMG_PATH"
           echo "DMG built at: $DMG_PATH"
 
       - name: Upload signed DMG
@@ -78,6 +95,6 @@ jobs:
       - name: Upload signed macOS app archive
         uses: actions/upload-artifact@v4
         with:
-          name: Ignis-Studio-3.1.0-macOS-signed-app
+          name: Ignis-Studio-3.1.0-macOS-x64-signed-app
           path: out/installer/mac*/Ignis Studio 3.1.app
           if-no-files-found: ignore
