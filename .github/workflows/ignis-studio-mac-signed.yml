@@ -50,17 +50,38 @@ jobs:
       - name: Check signing and notarization secrets
         run: node scripts/check-mac-signing-env.js
 
-      - name: Build signed x64 DMG
-        timeout-minutes: 20
+      - name: Build signed universal DMG
+        timeout-minutes: 45
         env:
           APPLE_API_KEY: ""
           APPLE_API_KEY_BASE64: ""
           APPLE_API_KEY_ID: ""
           APPLE_API_ISSUER: ""
-        run: npx electron-builder --mac dmg --x64 --publish never --config.mac.notarize=false
+        run: npx electron-builder --mac dmg --universal --publish never --config.mac.notarize=false
+
+      - name: Verify packaged app contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find out/installer -name 'Ignis Studio 3.1.app' -print -quit)"
+          DMG_PATH="$(find out/installer -name '*.dmg' -print -quit)"
+          test -n "$APP_PATH"
+          test -n "$DMG_PATH"
+          test -f "$APP_PATH/Contents/Info.plist"
+          test -x "$APP_PATH/Contents/MacOS/Ignis Studio 3.1"
+          test -f "$APP_PATH/Contents/Resources/app/src/index.js"
+          test -f "$APP_PATH/Contents/Resources/app/src/js/resizer.js"
+          test -f "$APP_PATH/Contents/Resources/app/src/img/icon.icns"
+          test -f "$APP_PATH/Contents/Resources/app/package.json"
+          test -d "$APP_PATH/Contents/Resources/app/node_modules"
+          echo "Packaged app: $APP_PATH"
+          echo "Packaged DMG: $DMG_PATH"
+          echo "Packaged source files: $(find "$APP_PATH/Contents/Resources/app/src" -type f | wc -l | tr -d ' ')"
+          plutil -p "$APP_PATH/Contents/Info.plist" | grep -E 'CFBundleIdentifier|CFBundleName|CFBundleDisplayName|CFBundleDocumentTypes' || true
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
       - name: Notarize and staple DMG
-        timeout-minutes: 35
+        timeout-minutes: 125
         shell: bash
         run: |
           set -euo pipefail
@@ -72,7 +93,7 @@ jobs:
             --key-id "$APPLE_API_KEY_ID" \
             --issuer "$APPLE_API_ISSUER" \
             --wait \
-            --timeout 30m
+            --timeout 120m
           xcrun stapler staple "$DMG_PATH"
           xcrun stapler validate "$DMG_PATH"
 
@@ -93,13 +114,13 @@ jobs:
       - name: Upload signed DMG
         uses: actions/upload-artifact@v4
         with:
-          name: Ignis-Studio-3.1.0-macOS-x64-signed-notarized-DMG
+          name: Ignis-Studio-3.1.0-macOS-universal-signed-notarized-DMG
           path: out/installer/*.dmg
           if-no-files-found: error
 
       - name: Upload signed macOS app archive
         uses: actions/upload-artifact@v4
         with:
-          name: Ignis-Studio-3.1.0-macOS-x64-signed-app
+          name: Ignis-Studio-3.1.0-macOS-universal-signed-app
           path: out/installer/mac*/Ignis Studio 3.1.app
           if-no-files-found: ignore
